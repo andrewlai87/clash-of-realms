@@ -6,14 +6,16 @@ capture plays out as an animated battle.
 
 **The Ivory Order** (white) vs **The Obsidian Legion** (black).
 
-> **This branch (`3d`)** renders the game in full 3D (Three.js): orbit the camera
-> around a low-poly battlefield of blocky humanoid soldiers — footmen with spears
-> and shields, mounted knights, robed mages, stone golems, and crowned royals,
-> all with articulated limbs. Pieces stride (or gallop, or glide) between squares,
-> and capture battles are fought *on the board*: the camera swoops down, weapon
-> arms wind up and swing, mages hurl spell projectiles, golems deliver double-fist
-> slams, and the defeated piece topples and sinks. The original 2D version lives
-> on the `main` branch.
+> **This branch (`3d`)** renders the game in full 3D (Three.js) with rigged,
+> professionally-animated characters from the CC0 [KayKit](https://kaylousberg.com)
+> packs: the **Ivory Order** fields armored knights, a bear-hooded barbarian,
+> wizard-hatted mages, and crowned royals; the **Obsidian Legion** is an army of
+> skeletons. Rooks are procedural stone golems. Pieces run and walk between
+> squares with real animation clips, and capture battles are fought *on the
+> board*: the camera swoops down, sword-swing / spellcast / punch attack clips
+> land with impact effects, the defender plays a death animation and sinks, and
+> the victor cheers. Blocky procedural pieces remain as an automatic fallback if
+> the models can't load. The original 2D version lives on the `main` branch.
 
 ## Play it
 

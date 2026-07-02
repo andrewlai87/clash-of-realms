@@ -268,8 +268,12 @@
     refreshStatus();
   };
 
-  Board3D.fullSync(game);
-  refreshMarkers();
-  renderCaptured();
-  refreshStatus();
+  refreshStatus("Summoning the armies…");
+  Pieces3D.load().then(ok => {
+    if (!ok) console.warn("Character models unavailable — using built-in pieces.");
+    Board3D.fullSync(game);
+    refreshMarkers();
+    renderCaptured();
+    refreshStatus();
+  });
 })();

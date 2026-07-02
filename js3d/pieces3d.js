@@ -318,7 +318,7 @@ const Pieces3D = (() => {
 
   const BUILDERS = { p: pawn, n: knight, b: bishop, r: rook, q: queen, k: king };
 
-  function build(type, color) {
+  function buildProcedural(type, color) {
     const g = new THREE.Group();
     const P = palette(color);
     g.userData = { type, color, height: 1, restArmR: 0 };
@@ -330,5 +330,190 @@ const Pieces3D = (() => {
     return g;
   }
 
-  return { build, palette };
+  // ================= rigged KayKit characters =================
+  // Ivory Order = Adventurers pack, Obsidian Legion = Skeletons pack.
+  // Rooks stay procedural stone golems on both sides (no golem in the packs,
+  // and a "constructed" piece among the living reads well).
+
+  const MODELS = {};       // name -> {scene, animations}
+  const WEAPONS = {};      // name -> scene (non-skinned accessory)
+  let modelsReady = false;
+
+  const CHAR_FILES = {
+    Knight: "assets/models/Knight.glb",
+    Barbarian: "assets/models/Barbarian.glb",
+    Mage: "assets/models/Mage.glb",
+    Rogue: "assets/models/Rogue.glb",
+    Skeleton_Warrior: "assets/models/Skeleton_Warrior.glb",
+    Skeleton_Mage: "assets/models/Skeleton_Mage.glb",
+    Skeleton_Minion: "assets/models/Skeleton_Minion.glb",
+    Skeleton_Rogue: "assets/models/Skeleton_Rogue.glb",
+  };
+  const WEAPON_FILES = {
+    blade: "assets/models/Skeleton_Blade.gltf",
+    staff: "assets/models/Skeleton_Staff.gltf",
+  };
+
+  // every optional gear mesh per model; build() hides these, then shows cfg.show
+  const GEAR = {
+    Knight: ["1H_Sword_Offhand", "Badge_Shield", "Rectangle_Shield", "Round_Shield", "Spike_Shield", "1H_Sword", "2H_Sword", "Knight_Helmet", "Knight_Cape"],
+    Barbarian: ["1H_Axe_Offhand", "Barbarian_Round_Shield", "1H_Axe", "2H_Axe", "Mug", "Barbarian_Hat", "Barbarian_Cape"],
+    Mage: ["Spellbook", "Spellbook_open", "1H_Wand", "2H_Staff", "Mage_Hat", "Mage_Cape"],
+    Rogue: ["Knife_Offhand", "1H_Crossbow", "2H_Crossbow", "Knife", "Throwable", "Rogue_Cape"],
+    Skeleton_Warrior: ["Skeleton_Warrior_Helmet", "Skeleton_Warrior_Cloak"],
+    Skeleton_Mage: ["Skeleton_Mage_Hat"],
+    Skeleton_Minion: ["Skeleton_Minion_Cloak"],
+    Skeleton_Rogue: ["Skeleton_Rogue_Hood", "Skeleton_Rogue_Cape"],
+  };
+
+  // role config: which character, which gear, which attack clip
+  const ROLE = {
+    w: {
+      p: { model: "Knight", show: ["1H_Sword", "Badge_Shield", "Knight_Helmet"], attack: "1H_Melee_Attack_Slice_Diagonal", scale: 0.42 },
+      n: { model: "Barbarian", show: ["2H_Axe", "Barbarian_Hat", "Barbarian_Cape"], attack: "2H_Melee_Attack_Spin", scale: 0.46 },
+      b: { model: "Mage", show: ["2H_Staff", "Mage_Hat"], attack: "Spellcast_Shoot", scale: 0.45 },
+      q: { model: "Rogue", show: ["Rogue_Cape"], crown: true, attack: "Spellcast_Shoot", scale: 0.48 },
+      k: { model: "Knight", show: ["2H_Sword", "Knight_Cape"], crown: true, attack: "2H_Melee_Attack_Slice", scale: 0.52 },
+    },
+    b: {
+      p: { model: "Skeleton_Minion", show: [], attack: "Unarmed_Melee_Attack_Punch_A", scale: 0.42 },
+      n: { model: "Skeleton_Warrior", show: ["Skeleton_Warrior_Helmet"], weapon: "blade", attack: "1H_Melee_Attack_Chop", scale: 0.46 },
+      b: { model: "Skeleton_Mage", show: ["Skeleton_Mage_Hat"], weapon: "staff", attack: "Spellcast_Shoot", scale: 0.45 },
+      q: { model: "Skeleton_Rogue", show: ["Skeleton_Rogue_Hood", "Skeleton_Rogue_Cape"], crown: true, attack: "Spellcast_Shoot", scale: 0.48 },
+      k: { model: "Skeleton_Warrior", show: ["Skeleton_Warrior_Cloak"], weapon: "blade", crown: true, attack: "1H_Melee_Attack_Slice_Diagonal", scale: 0.52 },
+    },
+  };
+
+  function load() {
+    if (!THREE.GLTFLoader) return Promise.resolve(false);
+    const loader = new THREE.GLTFLoader();
+    const one = (url, cb) => new Promise(res =>
+      loader.load(url, g => { cb(g); res(true); }, undefined, err => {
+        console.warn("model load failed:", url, err);
+        res(false);
+      }));
+    const jobs = [
+      ...Object.entries(CHAR_FILES).map(([n, u]) => one(u, g => { MODELS[n] = g; })),
+      ...Object.entries(WEAPON_FILES).map(([n, u]) => one(u, g => { WEAPONS[n] = g.scene; })),
+    ];
+    return Promise.all(jobs).then(oks => {
+      modelsReady = Object.keys(MODELS).length === Object.keys(CHAR_FILES).length;
+      return modelsReady;
+    });
+  }
+
+  // small gold crown built from primitives, attached to the head bone
+  function makeCrown(color, big) {
+    const P = palette(color);
+    const c = new THREE.Group();
+    const r = big ? 0.13 : 0.11;
+    add(c, cyl(r, r * 1.08, 0.09, 10), goldMat(P.trim), 0, 0.045, 0);
+    const spikes = big ? 5 : 4;
+    for (let i = 0; i < spikes; i++) {
+      const a = (i / spikes) * Math.PI * 2;
+      add(c, cone(0.03, 0.09, 6), goldMat(P.trim), Math.cos(a) * r * 0.82, 0.12, Math.sin(a) * r * 0.82);
+    }
+    add(c, sph(0.035, 6), glowMat(P.glow), 0, 0.05, -r * 0.95);
+    return c;
+  }
+
+  function buildSkinned(type, color) {
+    const cfg = ROLE[color] && ROLE[color][type];
+    if (!cfg || !MODELS[cfg.model]) return null;
+    const src = MODELS[cfg.model];
+    const char = THREE.SkeletonUtils.clone(src.scene);
+    char.traverse(o => {
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+        o.frustumCulled = false;
+        o.material = o.material.clone();   // per-piece materials so hit-flashes don't leak
+      }
+    });
+    // gear visibility
+    for (const name of GEAR[cfg.model] || []) {
+      const n = char.getObjectByName(name);
+      if (n) n.visible = cfg.show.includes(name);
+    }
+    // crown on the head bone (sized for the rig's local space)
+    if (cfg.crown) {
+      const headBone = char.getObjectByName("head");
+      if (headBone) {
+        const crown = makeCrown(color, type === "k");
+        crown.scale.setScalar(2.6);
+        crown.position.y = 0.88;   // chibi heads are huge; clear the scalp
+        headBone.add(crown);
+      }
+    }
+    // skeleton weapons attach to the right hand slot
+    if (cfg.weapon && WEAPONS[cfg.weapon]) {
+      const slot = char.getObjectByName("handslot.r");
+      if (slot) {
+        const w = WEAPONS[cfg.weapon].clone(true);
+        w.traverse(o => { if (o.isMesh) o.castShadow = true; });
+        slot.add(w);
+      }
+    }
+    const g = new THREE.Group();
+    char.scale.setScalar(cfg.scale);
+    char.rotation.y = Math.PI;   // KayKit models face +z; our forward is -z
+    g.add(char);
+    const mixer = new THREE.AnimationMixer(char);
+    const actions = {};
+    for (const clip of src.animations) actions[clip.name] = mixer.clipAction(clip);
+    let current = null;
+    const play = (name, fade = 0.25) => {
+      const a = actions[name];
+      if (!a || a === current) return a;
+      a.reset();
+      a.setLoop(THREE.LoopRepeat, Infinity);
+      a.clampWhenFinished = false;
+      a.enabled = true;
+      a.setEffectiveWeight(1);
+      a.fadeIn(fade).play();
+      if (current) current.fadeOut(fade);
+      current = a;
+      return a;
+    };
+    const playOnce = (name, fade = 0.15) => new Promise(res => {
+      const a = actions[name];
+      if (!a) return res();
+      a.reset();
+      a.setLoop(THREE.LoopOnce, 1);
+      a.clampWhenFinished = true;
+      a.enabled = true;
+      a.setEffectiveWeight(1);
+      a.fadeIn(fade).play();
+      if (current && current !== a) current.fadeOut(fade);
+      current = a;
+      const onFin = e => {
+        if (e.action === a) {
+          mixer.removeEventListener("finished", onFin);
+          res();
+        }
+      };
+      mixer.addEventListener("finished", onFin);
+    });
+    play("Idle");
+    // desync idle cycles so the army doesn't breathe in unison
+    mixer.update(Math.random() * 2);
+    g.userData = {
+      type, color, skinned: true, mixer, actions, play, playOnce,
+      attack: cfg.attack,
+      height: 1.9 * cfg.scale,
+      parts: null,
+    };
+    if (color === "b") g.rotation.y = Math.PI;
+    return g;
+  }
+
+  function build(type, color) {
+    if (modelsReady && type !== "r") {
+      const g = buildSkinned(type, color);
+      if (g) return g;
+    }
+    return buildProcedural(type, color);
+  }
+
+  return { build, palette, load, get modelsReady() { return modelsReady; } };
 })();

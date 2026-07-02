@@ -9,7 +9,18 @@
       "Bash(curl -sL -o js3d/vendor/three.min.js \"https://unpkg.com/three@0.149.0/build/three.min.js\")",
       "Bash(git commit -m '3D board with on-board cinematic battles \\(Three.js\\) *)",
       "Bash(python3 -m http.server 3000)",
-      "Bash(git commit -m 'Humanoid piece models with articulated limbs + limb-aware battles *)"
+      "Bash(git commit -m 'Humanoid piece models with articulated limbs + limb-aware battles *)",
+      "Bash(lsof -i :3000 -sTCP:LISTEN)",
+      "WebSearch",
+      "Bash(curl -s \"https://api.github.com/repos/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0/git/trees/main?recursive=1\")",
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s \"https://api.github.com/orgs/KayKit-Game-Assets/repos?per_page=100\")",
+      "Bash(curl -s \"https://api.github.com/users/KayKit-Game-Assets/repos?per_page=100\")",
+      "Bash(curl -s \"https://api.github.com/repos/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0/git/trees/main?recursive=1\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0/main/addons/kaykit_character_pack_skeletons/Assets/gltf/Skeleton_Blade.gltf\")",
+      "Bash(curl -sL -o three.min.js \"https://unpkg.com/three@0.147.0/build/three.min.js\")",
+      "Bash(curl -sL -o GLTFLoader.js \"https://unpkg.com/three@0.147.0/examples/js/loaders/GLTFLoader.js\")",
+      "Bash(curl -sL -o SkeletonUtils.js \"https://unpkg.com/three@0.147.0/examples/js/utils/SkeletonUtils.js\")"
     ]
   }
 }

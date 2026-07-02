@@ -9,15 +9,27 @@
 const Battle3D = (() => {
 
   let skipped = false;
+  let skipResolvers = [];
 
   const tw = (obj, props, opts) =>
     skipped ? (Object.assign(obj, props), opts?.onUpdate?.(1), Promise.resolve()) : Tween.to(obj, props, opts);
   const pause = ms => (skipped ? Promise.resolve() : Tween.wait(ms));
 
+  // play an animation clip once; resolves early if the battle is skipped
+  function clip(g, name) {
+    if (skipped || !g.userData.skinned) return Promise.resolve();
+    return Promise.race([
+      g.userData.playOnce(name),
+      new Promise(res => skipResolvers.push(res)),
+    ]);
+  }
+
   function skip() {
     if (skipped) return;
     skipped = true;
     Tween.skipAll();
+    for (const r of skipResolvers) r();
+    skipResolvers = [];
   }
 
   function fighterName(piece) {
@@ -33,6 +45,19 @@ const Battle3D = (() => {
   }
 
   async function meleeStrike(atk, def, dir, glowColor) {
+    if (atk.userData.skinned) {
+      const swing = clip(atk, atk.userData.attack);
+      tw(atk.position, { x: atk.position.x + dir.x * 0.22, z: atk.position.z + dir.z * 0.22 },
+         { duration: 260, easing: "inOut" });
+      await pause(380);   // impact lands mid-clip
+      Sound.clang();
+      Board3D.spawnBurst(hitPoint(def), glowColor, 16);
+      Board3D.shake(0.09);
+      flashHit(def);
+      clip(def, "Hit_A");
+      await swing;
+      return;
+    }
     const armR = atk.userData.parts && atk.userData.parts.armR;
     const isLance = atk.userData.type === "n";
     // windup: raise the weapon arm (lancers couch instead of chopping)
@@ -62,11 +87,18 @@ const Battle3D = (() => {
 
   async function magicStrike(atk, def, dir, glowColor) {
     const armR = atk.userData.parts && atk.userData.parts.armR;
+    const skinned = atk.userData.skinned;
+    let castClip = null;
     Sound.magic();
-    await Promise.all([
-      tw(atk.rotation, { x: 0.14 }, { duration: 300, easing: "out" }),
-      armR ? tw(armR.rotation, { x: 2.9 }, { duration: 300, easing: "out" }) : null,
-    ].filter(Boolean));
+    if (skinned) {
+      castClip = clip(atk, "Spellcast_Shoot");
+      await pause(280);   // orb releases as the cast gesture peaks
+    } else {
+      await Promise.all([
+        tw(atk.rotation, { x: 0.14 }, { duration: 300, easing: "out" }),
+        armR ? tw(armR.rotation, { x: 2.9 }, { duration: 300, easing: "out" }) : null,
+      ].filter(Boolean));
+    }
     // conjure orb above the mage
     const orb = new THREE.Mesh(
       new THREE.SphereGeometry(0.02, 10, 8),
@@ -101,10 +133,12 @@ const Battle3D = (() => {
     Board3D.spawnBurst(end, glowColor, 22, 3.2);
     Board3D.shake(0.1);
     flashHit(def);
+    clip(def, "Hit_A");
     const fade = { i: 2.4 };
     tw(fade, { i: 0 }, { duration: 400, easing: "out", onUpdate: () => { glow.intensity = fade.i; } })
       .then(() => Board3D.scene.remove(glow));
     await pause(150);
+    if (skinned) { await castClip; return; }
     tw(atk.rotation, { x: 0 }, { duration: 250, easing: "out" });
     if (armR) tw(armR.rotation, { x: atk.userData.restArmR || 0 }, { duration: 250, easing: "out" });
   }
@@ -163,6 +197,14 @@ const Battle3D = (() => {
 
   async function death(def) {
     Sound.death();
+    if (def.userData.skinned) {
+      await clip(def, "Death_A");
+      await pause(220);
+      Board3D.spawnBurst(def.position.clone().add(new THREE.Vector3(0, 0.2, 0)),
+        def.userData.color === "w" ? 0xd8d4c4 : 0x554e5e, 14);
+      await tw(def.position, { y: -1.4 }, { duration: 500, easing: "in" });
+      return;
+    }
     const p = def.userData.parts || {};
     await Promise.all([
       tw(def.rotation, { x: def.rotation.x - 1.55 }, { duration: 420, easing: "in" }),
@@ -189,6 +231,7 @@ const Battle3D = (() => {
     const def = Board3D.removePiece(capSq);   // take over the map slot; keep visible
     if (!atk || !def) return;
     Board3D.scene.add(def);
+    Board3D.trackAnim(def);   // keep the victim's animations running while detached
 
     const banner = document.getElementById("battle3d-banner");
     banner.innerHTML = `<span>${fighterName(attackerPiece)}</span><span class="bt-vs">⚔</span><span>${fighterName(defenderPiece)}</span>`;
@@ -216,7 +259,7 @@ const Battle3D = (() => {
     const type = attackerPiece[1];
     const approachDist = Math.hypot(stop.x - A.x, stop.z - A.z);
     if (approachDist > 0.35) {
-      if (type === "n") {
+      if (type === "n" && !atk.userData.skinned) {
         // gallop-leap over the battlefield
         const s = { t: 0 };
         await tw(s, { t: 1 }, {
@@ -247,12 +290,17 @@ const Battle3D = (() => {
 
     await death(def);
     Board3D.scene.remove(def);
+    Board3D.untrackAnim(def);
 
     // claim the square
     await Promise.all([
       tw(atk.position, { x: D.x, z: D.z, y: 0 }, { duration: 320, easing: "inOut" }),
       faceYaw(atk, Board3D.factionYaw(atk.userData.color), 320),
     ]);
+    if (!skipped && atk.userData.skinned) {
+      clip(atk, "Cheer");     // victory flourish; commitMove fades back to Idle
+      await pause(700);
+    }
     await pause(skipped ? 0 : 240);
 
     banner.hidden = true;
