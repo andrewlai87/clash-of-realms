@@ -1,0 +1,379 @@
+/* Clash of Realms — medieval fantasy chess */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --gold: #d8ab4a;
+  --gold-dark: #8a6420;
+  --parchment: #f1e3c2;
+  --parchment-dark: #d9c69a;
+  --ink: #3a2c18;
+  --wood: #4a3220;
+  --wood-dark: #2e1f12;
+  --sq-light: #e7d4a4;
+  --sq-dark: #976f42;
+}
+
+body {
+  min-height: 100vh;
+  font-family: "Palatino", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  background:
+    radial-gradient(ellipse 90% 60% at 50% -10%, #2c2440 0%, transparent 60%),
+    radial-gradient(ellipse 80% 60% at 50% 110%, #241a2e 0%, transparent 60%),
+    linear-gradient(180deg, #17131f 0%, #0e0b14 100%);
+  color: var(--parchment);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 18px 16px 40px;
+}
+
+header { text-align: center; margin-bottom: 18px; }
+
+header h1 {
+  font-size: clamp(28px, 4.5vw, 44px);
+  letter-spacing: 3px;
+  background: linear-gradient(180deg, #f5dfa0 20%, #d8ab4a 55%, #a3782c 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 3px 14px rgba(216, 171, 74, 0.25);
+}
+
+.tagline {
+  margin-top: 4px;
+  font-style: italic;
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: #9b8db3;
+}
+
+main {
+  display: flex;
+  gap: 26px;
+  align-items: flex-start;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ---------- board ---------- */
+
+#board-frame {
+  padding: 14px;
+  background: linear-gradient(145deg, #5a4028, #3a2916 60%, #2b1d0e);
+  border: 2px solid var(--gold-dark);
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 1px #1c130a,
+    0 18px 50px rgba(0, 0, 0, 0.65),
+    inset 0 0 18px rgba(0, 0, 0, 0.5);
+}
+
+#board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  width: min(80vw, 72vh, 620px);
+  aspect-ratio: 1;
+  border: 3px solid var(--wood-dark);
+  outline: 1px solid var(--gold-dark);
+}
+
+.sq { position: relative; cursor: pointer; user-select: none; }
+.sq.light { background: linear-gradient(135deg, #eeddb0, var(--sq-light)); }
+.sq.dark  { background: linear-gradient(135deg, #a37a4b, var(--sq-dark)); }
+
+.sq svg {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -52%);
+  width: 88%;
+  height: 96%;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.35));
+  pointer-events: none;
+}
+
+.sq.last::before {
+  content: ""; position: absolute; inset: 0;
+  background: rgba(240, 200, 90, 0.28);
+}
+.sq.sel::before {
+  content: ""; position: absolute; inset: 0;
+  box-shadow: inset 0 0 0 3px var(--gold), inset 0 0 18px rgba(216, 171, 74, 0.6);
+}
+.sq.check::before {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(circle, rgba(220, 40, 40, 0.55) 20%, rgba(220, 40, 40, 0.1) 70%);
+}
+
+.marker { position: absolute; pointer-events: none; }
+.marker-mv {
+  left: 50%; top: 50%;
+  width: 26%; height: 26%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(216, 171, 74, 0.85) 0%, rgba(216, 171, 74, 0.35) 70%);
+  box-shadow: 0 0 8px rgba(216, 171, 74, 0.6);
+}
+.marker-cap {
+  inset: 4%;
+  border-radius: 50%;
+  border: 3px solid rgba(205, 60, 50, 0.85);
+  box-shadow: 0 0 10px rgba(205, 60, 50, 0.55), inset 0 0 10px rgba(205, 60, 50, 0.35);
+}
+.sq.target::before {
+  content: ""; position: absolute; inset: 0;
+  background: rgba(205, 60, 50, 0.4);
+}
+
+.coord {
+  position: absolute;
+  font-size: 11px;
+  font-weight: bold;
+  opacity: 0.75;
+  pointer-events: none;
+}
+.coord-file { right: 3px; bottom: 2px; }
+.coord-rank { left: 3px; top: 2px; }
+.sq.light .coord { color: #8a6234; }
+.sq.dark .coord { color: #eeddb0; }
+
+/* ---------- side panel ---------- */
+
+#panel {
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.panel-box {
+  background:
+    linear-gradient(180deg, rgba(255, 250, 235, 0.06), rgba(255, 250, 235, 0.02)),
+    linear-gradient(180deg, #241d31, #1a1425);
+  border: 1px solid #4d3f66;
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
+}
+
+.panel-box h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  color: var(--gold);
+  border-bottom: 1px solid rgba(216, 171, 74, 0.3);
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+}
+
+#turn-banner {
+  font-size: 17px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.shield { width: 14px; height: 16px; border-radius: 3px 3px 50% 50%; display: inline-block; }
+.shield-w { background: linear-gradient(180deg, #f1f4fa, #9daac4); border: 1px solid #d8ab4a; }
+.shield-b { background: linear-gradient(180deg, #5c6070, #2b2d38); border: 1px solid #96303f; }
+
+#status-msg { margin-top: 6px; font-size: 13.5px; font-style: italic; color: #b9aed0; min-height: 18px; }
+
+.ctl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+.ctl-row label { font-size: 13.5px; color: #cfc3e4; }
+
+select {
+  flex: 1;
+  max-width: 175px;
+  background: #2e2542;
+  color: var(--parchment);
+  border: 1px solid #5a4a7a;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 10px; }
+
+.btn {
+  background: linear-gradient(180deg, #e3b95c, #a87f2a);
+  color: #2b1d0e;
+  border: 1px solid #6b4e14;
+  border-radius: 7px;
+  padding: 8px 13px;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.btn:hover { filter: brightness(1.12); }
+.btn:active { transform: translateY(1px); }
+
+.btn-ghost {
+  background: linear-gradient(180deg, #3a3052, #251d38);
+  color: #d6c9ef;
+  border: 1px solid #5a4a7a;
+  box-shadow: none;
+}
+
+.toggle-row { display: flex; gap: 16px; font-size: 13.5px; color: #cfc3e4; }
+.toggle-row input { accent-color: var(--gold); }
+
+.captured-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: #8f82a8;
+  margin: 6px 0 3px;
+}
+.captured-row { display: flex; flex-wrap: wrap; gap: 2px; min-height: 34px; align-items: center; }
+.captured-row svg { width: 26px; height: 31px; opacity: 0.92; }
+.captured-row .none { font-size: 12px; font-style: italic; color: #6d6285; }
+
+/* ---------- battle overlay ---------- */
+
+.battle-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 62%, rgba(90, 60, 20, 0.35), transparent 70%),
+    radial-gradient(ellipse at center, rgba(20, 15, 30, 0.94) 40%, rgba(8, 6, 14, 0.98) 100%);
+  cursor: pointer;
+}
+
+.battle-banner {
+  font-size: clamp(18px, 3vw, 30px);
+  font-weight: bold;
+  letter-spacing: 1px;
+  color: var(--parchment);
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 10px;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+}
+.bt-vs { color: var(--gold); font-size: 1.2em; }
+.bt-victory { color: var(--gold); }
+
+.battle-arena {
+  position: relative;
+  width: min(92vw, 860px);
+  height: 380px;
+}
+
+.battle-ground {
+  position: absolute;
+  left: 50%; bottom: 20px;
+  transform: translateX(-50%);
+  width: 88%; height: 70px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(140, 105, 55, 0.5) 0%, rgba(70, 50, 25, 0.25) 55%, transparent 75%);
+}
+
+.bt-fighter {
+  position: absolute;
+  bottom: 52px;
+  width: clamp(140px, 24vw, 210px);
+  will-change: transform;
+}
+.bt-fighter svg { width: 100%; height: auto; filter: drop-shadow(0 6px 14px rgba(0,0,0,0.6)); }
+.bt-attacker { left: 10%; }
+.bt-defender { right: 10%; }
+
+.bt-particle {
+  position: absolute;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.bt-slash { position: absolute; width: 120px; height: 120px; pointer-events: none; }
+.bt-orb { position: absolute; width: 46px; height: 46px; border-radius: 50%; pointer-events: none; }
+.bt-boom { position: absolute; width: 150px; height: 150px; border-radius: 50%; pointer-events: none; }
+.bt-dust {
+  position: absolute;
+  bottom: 46px;
+  width: 190px; height: 34px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(190, 165, 115, 0.75) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.battle-hint {
+  margin-top: 14px;
+  font-size: 12px;
+  font-style: italic;
+  letter-spacing: 2px;
+  color: #7d7295;
+}
+
+/* ---------- modals ---------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 7, 16, 0.8);
+}
+
+.modal {
+  background: linear-gradient(180deg, var(--parchment), var(--parchment-dark));
+  color: var(--ink);
+  border: 3px solid var(--gold-dark);
+  border-radius: 12px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.8), inset 0 0 40px rgba(140, 100, 40, 0.15);
+  padding: 26px 34px;
+  text-align: center;
+  max-width: min(92vw, 520px);
+}
+
+.modal h2 { font-size: 24px; letter-spacing: 1px; margin-bottom: 6px; }
+.modal p { font-style: italic; margin-bottom: 14px; }
+
+.promo-row { display: flex; gap: 10px; justify-content: center; }
+.promo-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 252, 240, 0.55);
+  border: 2px solid var(--gold-dark);
+  border-radius: 10px;
+  padding: 10px 8px 7px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: bold;
+  color: var(--ink);
+  width: 96px;
+}
+.promo-btn:hover { background: #fff6dd; box-shadow: 0 0 14px rgba(216, 171, 74, 0.7); transform: translateY(-2px); }
+.promo-btn svg { width: 56px; height: 67px; }
+
+.go-art svg { width: 90px; height: 108px; margin: 0 4px; }
+.go-btns { display: flex; gap: 10px; justify-content: center; margin-top: 8px; }
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 1020px) {
+  main { flex-direction: column; align-items: center; }
+  #panel { width: min(92vw, 620px); }
+}

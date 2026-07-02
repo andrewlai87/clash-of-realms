@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clash of Realms — Fantasy Chess</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚔️</text></svg>">
+</head>
+<body>
+
+  <header>
+    <h1>⚔ Clash of Realms</h1>
+    <p class="tagline">The Ivory Order &nbsp;·&nbsp; a fantasy chess saga &nbsp;·&nbsp; The Obsidian Legion</p>
+  </header>
+
+  <main>
+    <div id="board-frame">
+      <div id="board"></div>
+    </div>
+
+    <aside id="panel">
+      <section class="panel-box" id="status-panel">
+        <div id="turn-banner"></div>
+        <div id="status-msg"></div>
+      </section>
+
+      <section class="panel-box">
+        <h3>Command</h3>
+        <div class="ctl-row">
+          <label for="mode-select">Foe</label>
+          <select id="mode-select">
+            <option value="ai" selected>The Computer</option>
+            <option value="2p">A Friend (2P)</option>
+          </select>
+        </div>
+        <div id="ai-options">
+          <div class="ctl-row">
+            <label for="level-select">Cunning</label>
+            <select id="level-select">
+              <option value="easy">Squire (easy)</option>
+              <option value="medium" selected>Knight (medium)</option>
+              <option value="hard">Warlord (hard)</option>
+            </select>
+          </div>
+          <div class="ctl-row">
+            <label for="color-select">You lead</label>
+            <select id="color-select">
+              <option value="w" selected>The Ivory Order</option>
+              <option value="b">The Obsidian Legion</option>
+            </select>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn" id="btn-new">⚔ New Campaign</button>
+          <button class="btn btn-ghost" id="btn-undo">↩ Undo</button>
+          <button class="btn btn-ghost" id="btn-flip">⇅ Flip</button>
+        </div>
+        <div class="toggle-row">
+          <label><input type="checkbox" id="toggle-battles" checked> Battle scenes</label>
+          <label><input type="checkbox" id="toggle-sound" checked> Sound</label>
+        </div>
+      </section>
+
+      <section class="panel-box">
+        <h3>The Fallen</h3>
+        <div class="captured-label">Ivory Order</div>
+        <div class="captured-row" id="captured-w"></div>
+        <div class="captured-label">Obsidian Legion</div>
+        <div class="captured-row" id="captured-b"></div>
+      </section>
+    </aside>
+  </main>
+
+  <script src="js/engine.js"></script>
+  <script src="js/pieces.js"></script>
+  <script src="js/sound.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/battle.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
