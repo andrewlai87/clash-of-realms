@@ -56,6 +56,52 @@ main {
   flex-wrap: wrap;
 }
 
+/* ---------- 3D board ---------- */
+
+#board3d-wrap {
+  position: relative;
+  border: 2px solid var(--gold-dark);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.65);
+}
+
+#board3d {
+  width: min(88vw, 78vh, 760px);
+  height: min(88vw, 78vh, 760px);
+}
+
+#board3d canvas { display: block; }
+
+#battle3d-banner {
+  position: absolute;
+  top: 16px; left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  font-size: clamp(15px, 2.2vw, 22px);
+  font-weight: bold;
+  letter-spacing: 1px;
+  color: var(--parchment);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+  white-space: nowrap;
+}
+#battle3d-banner[hidden] { display: none; }
+
+#orbit-hint {
+  position: absolute;
+  bottom: 8px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-style: italic;
+  letter-spacing: 1.5px;
+  color: rgba(200, 190, 220, 0.55);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 /* ---------- board ---------- */
 
 #board-frame {

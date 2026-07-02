@@ -4,7 +4,10 @@
       "Bash(node -e ' *)",
       "Bash(git init *)",
       "Bash(git add *)",
-      "Bash(git commit -m 'Clash of Realms: fantasy chess with cinematic capture battles *)"
+      "Bash(git commit -m 'Clash of Realms: fantasy chess with cinematic capture battles *)",
+      "Bash(git checkout *)",
+      "Bash(curl -sL -o js3d/vendor/three.min.js \"https://unpkg.com/three@0.149.0/build/three.min.js\")",
+      "Bash(git commit -m '3D board with on-board cinematic battles \\(Three.js\\) *)"
     ]
   }
 }

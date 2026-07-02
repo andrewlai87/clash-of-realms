@@ -6,6 +6,12 @@ capture plays out as an animated battle.
 
 **The Ivory Order** (white) vs **The Obsidian Legion** (black).
 
+> **This branch (`3d`)** renders the game in full 3D (Three.js): orbit the camera
+> around a low-poly battlefield, and capture battles are fought *on the board* —
+> the camera swoops down, the attacker charges, mages hurl spell projectiles,
+> golems leap and slam, and the defeated piece topples and sinks. The original
+> 2D version lives on the `main` branch.
+
 ## Play it
 
 No install needed — it's pure HTML/CSS/JavaScript:
