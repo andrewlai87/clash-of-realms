@@ -33,16 +33,22 @@ const Battle3D = (() => {
   }
 
   async function meleeStrike(atk, def, dir, glowColor) {
-    // rear back
-    await tw(atk.rotation, { x: 0.28 }, { duration: 220, easing: "out" });
-    await pause(80);
-    // lunge
+    const armR = atk.userData.parts && atk.userData.parts.armR;
+    const isLance = atk.userData.type === "n";
+    // windup: raise the weapon arm (lancers couch instead of chopping)
+    await Promise.all([
+      tw(atk.rotation, { x: 0.24 }, { duration: 240, easing: "out" }),
+      armR && !isLance ? tw(armR.rotation, { x: 2.4 }, { duration: 240, easing: "out" }) : null,
+    ].filter(Boolean));
+    await pause(90);
+    // lunge + swing
     Sound.clang();
-    const lx = atk.position.x + dir.x * 0.5, lz = atk.position.z + dir.z * 0.5;
+    const lx = atk.position.x + dir.x * 0.45, lz = atk.position.z + dir.z * 0.45;
     await Promise.all([
       tw(atk.position, { x: lx, z: lz }, { duration: 150, easing: "in" }),
-      tw(atk.rotation, { x: -0.45 }, { duration: 150, easing: "in" }),
-    ]);
+      tw(atk.rotation, { x: -0.32 }, { duration: 150, easing: "in" }),
+      armR ? tw(armR.rotation, { x: isLance ? 1.5 : 0.5 }, { duration: 140, easing: "in" }) : null,
+    ].filter(Boolean));
     Board3D.spawnBurst(hitPoint(def), glowColor, 16);
     Board3D.shake(0.09);
     flashHit(def);
@@ -50,12 +56,17 @@ const Battle3D = (() => {
     await Promise.all([
       tw(atk.position, { x: atk.position.x - dir.x * 0.3, z: atk.position.z - dir.z * 0.3 }, { duration: 260, easing: "out" }),
       tw(atk.rotation, { x: 0 }, { duration: 260, easing: "out" }),
-    ]);
+      armR ? tw(armR.rotation, { x: atk.userData.restArmR || 0 }, { duration: 260, easing: "out" }) : null,
+    ].filter(Boolean));
   }
 
   async function magicStrike(atk, def, dir, glowColor) {
+    const armR = atk.userData.parts && atk.userData.parts.armR;
     Sound.magic();
-    await tw(atk.rotation, { x: 0.18 }, { duration: 280, easing: "out" });
+    await Promise.all([
+      tw(atk.rotation, { x: 0.14 }, { duration: 300, easing: "out" }),
+      armR ? tw(armR.rotation, { x: 2.9 }, { duration: 300, easing: "out" }) : null,
+    ].filter(Boolean));
     // conjure orb above the mage
     const orb = new THREE.Mesh(
       new THREE.SphereGeometry(0.02, 10, 8),
@@ -95,24 +106,39 @@ const Battle3D = (() => {
       .then(() => Board3D.scene.remove(glow));
     await pause(150);
     tw(atk.rotation, { x: 0 }, { duration: 250, easing: "out" });
+    if (armR) tw(armR.rotation, { x: atk.userData.restArmR || 0 }, { duration: 250, easing: "out" });
   }
 
   async function golemStrike(atk, def, dir, glowColor) {
+    const p = atk.userData.parts || {};
     Sound.magic();
-    // rise ominously
-    await tw(atk.position, { y: 1.25 }, { duration: 420, easing: "out" });
-    await pause(140);
-    // slam down beside the defender
-    const sx = def.position.x - dir.x * 0.55, sz = def.position.z - dir.z * 0.55;
+    // wind up: both fists overhead
     await Promise.all([
-      tw(atk.position, { x: sx, z: sz, y: 0 }, { duration: 190, easing: "in" }),
-    ]);
+      p.armR ? tw(p.armR.rotation, { x: 2.7 }, { duration: 420, easing: "out" }) : null,
+      p.armL ? tw(p.armL.rotation, { x: 2.7 }, { duration: 420, easing: "out" }) : null,
+      tw(atk.rotation, { x: 0.18 }, { duration: 420, easing: "out" }),
+    ].filter(Boolean));
+    await pause(150);
+    // double-fist slam
     Sound.thud();
-    Board3D.dustRing(atk.position);
+    const lx = atk.position.x + dir.x * 0.4, lz = atk.position.z + dir.z * 0.4;
+    await Promise.all([
+      tw(atk.position, { x: lx, z: lz }, { duration: 150, easing: "in" }),
+      tw(atk.rotation, { x: -0.35 }, { duration: 150, easing: "in" }),
+      p.armR ? tw(p.armR.rotation, { x: 0.4 }, { duration: 140, easing: "in" }) : null,
+      p.armL ? tw(p.armL.rotation, { x: 0.4 }, { duration: 140, easing: "in" }) : null,
+    ].filter(Boolean));
+    Board3D.dustRing(def.position);
     Board3D.spawnBurst(hitPoint(def), 0xbea573, 18, 3);
     Board3D.shake(0.16);
     flashHit(def);
     await pause(220);
+    await Promise.all([
+      tw(atk.position, { x: atk.position.x - dir.x * 0.25, z: atk.position.z - dir.z * 0.25 }, { duration: 280, easing: "out" }),
+      tw(atk.rotation, { x: 0 }, { duration: 280, easing: "out" }),
+      p.armR ? tw(p.armR.rotation, { x: 0 }, { duration: 280, easing: "out" }) : null,
+      p.armL ? tw(p.armL.rotation, { x: 0 }, { duration: 280, easing: "out" }) : null,
+    ].filter(Boolean));
   }
 
   function hitPoint(def) {
@@ -137,7 +163,12 @@ const Battle3D = (() => {
 
   async function death(def) {
     Sound.death();
-    await tw(def.rotation, { x: def.rotation.x - 1.55 }, { duration: 420, easing: "in" });
+    const p = def.userData.parts || {};
+    await Promise.all([
+      tw(def.rotation, { x: def.rotation.x - 1.55 }, { duration: 420, easing: "in" }),
+      p.armR ? tw(p.armR.rotation, { x: 2.4 }, { duration: 400, easing: "out" }) : null,
+      p.armL ? tw(p.armL.rotation, { x: 2.1 }, { duration: 440, easing: "out" }) : null,
+    ].filter(Boolean));
     Board3D.spawnBurst(def.position.clone().add(new THREE.Vector3(0, 0.25, 0)),
       def.userData.color === "w" ? 0xd8d4c4 : 0x554e5e, 14);
     await tw(def.position, { y: -1.7 }, { duration: 460, easing: "in" });
@@ -183,8 +214,10 @@ const Battle3D = (() => {
     // approach: stop short of the defender
     const stop = D.clone().sub(dir.clone().multiplyScalar(0.95));
     const type = attackerPiece[1];
-    if (Math.hypot(stop.x - A.x, stop.z - A.z) > 0.35) {
+    const approachDist = Math.hypot(stop.x - A.x, stop.z - A.z);
+    if (approachDist > 0.35) {
       if (type === "n") {
+        // gallop-leap over the battlefield
         const s = { t: 0 };
         await tw(s, { t: 1 }, {
           duration: 640, easing: "inOut",
@@ -192,12 +225,18 @@ const Battle3D = (() => {
             atk.position.x = A.x + (stop.x - A.x) * s.t;
             atk.position.z = A.z + (stop.z - A.z) * s.t;
             atk.position.y = Math.sin(s.t * Math.PI) * 1.0;
+            const tuck = Math.sin(s.t * Math.PI);
+            for (const l of (atk.userData.parts && atk.userData.parts.legs) || []) {
+              l.g.rotation.x = (l.g.position.z < 0 ? -0.7 : 0.7) * tuck;
+            }
           },
         });
-      } else if (type !== "r") {
-        await tw(atk.position, { x: stop.x, z: stop.z }, { duration: 480, easing: "inOut" });
+        Board3D.resetPose(atk);
+      } else if (skipped) {
+        atk.position.set(stop.x, 0, stop.z);
+      } else {
+        await Board3D.walkToPos(atk, stop.x, stop.z, 380 + approachDist * 170);
       }
-      // golem stays put and leaps during its strike
     }
     await pause(240);
 

@@ -307,6 +307,7 @@ const Board3D = (() => {
       g.userData.sq = move.to;
       g.position.set(worldX(move.to), 0, worldZ(move.to));
       g.rotation.set(0, factionYaw(g.userData.color), 0);
+      resetPose(g);
     }
     if (move.flags === "castleK" || move.flags === "castleQ") {
       const rookFrom = move.flags === "castleK" ? move.to + 1 : move.to - 2;
@@ -327,15 +328,53 @@ const Board3D = (() => {
 
   // ---------- movement animations ----------
 
+  // restore limbs to their resting pose
+  function resetPose(g) {
+    const parts = g.userData.parts;
+    if (!parts) return;
+    for (const l of parts.legs || []) l.g.rotation.set(0, 0, 0);
+    if (parts.armR) parts.armR.rotation.set(g.userData.restArmR || 0, 0, 0);
+    if (parts.armL) parts.armL.rotation.set(0, 0, 0);
+  }
+
+  // stride (or glide, for robed pieces) to a world position
+  function walkToPos(g, tx, tz, duration = 420) {
+    const fx = g.position.x, fz = g.position.z;
+    const distTiles = Math.hypot(tx - fx, tz - fz);
+    const cycles = Math.max(1, Math.round(distTiles * 1.3));
+    const parts = g.userData.parts || {};
+    const glide = !parts.legs || parts.legs.length === 0;
+    const s = { t: 0 };
+    return Tween.to(s, { t: 1 }, {
+      duration, easing: "inOut",
+      onUpdate: () => {
+        g.position.x = fx + (tx - fx) * s.t;
+        g.position.z = fz + (tz - fz) * s.t;
+        const env = Math.sin(Math.PI * Math.min(1, s.t * 1.15));
+        if (glide) {
+          g.position.y = Math.abs(Math.sin(s.t * Math.PI * cycles)) * 0.045 * env;
+        } else {
+          const w = s.t * Math.PI * 2 * cycles;
+          for (const l of parts.legs) l.g.rotation.x = Math.sin(w + l.phase) * 0.55 * env;
+          if (parts.armL) parts.armL.rotation.x = Math.sin(w + Math.PI) * 0.3 * env;
+          g.position.y = Math.abs(Math.sin(w)) * 0.025;
+        }
+      },
+    }).then(() => { g.position.y = 0; resetPose(g); });
+  }
+
+  function walkTo(g, toSq, duration) {
+    return walkToPos(g, worldX(toSq), worldZ(toSq), duration);
+  }
+
   function slide(g, toSq, duration = 420) {
-    return Promise.all([
-      Tween.to(g.position, { x: worldX(toSq), z: worldZ(toSq) }, { duration, easing: "inOut" }),
-    ]);
+    return walkTo(g, toSq, duration);
   }
 
   function leap(g, toSq, duration = 620, height = 1.1) {
     const fx = g.position.x, fz = g.position.z;
     const tx = worldX(toSq), tz = worldZ(toSq);
+    const parts = g.userData.parts || {};
     const s = { t: 0 };
     return Tween.to(s, { t: 1 }, {
       duration, easing: "inOut",
@@ -343,20 +382,25 @@ const Board3D = (() => {
         g.position.x = fx + (tx - fx) * s.t;
         g.position.z = fz + (tz - fz) * s.t;
         g.position.y = Math.sin(s.t * Math.PI) * height;
+        // legs stretch mid-leap: front legs forward, back legs trailing
+        const tuck = Math.sin(s.t * Math.PI);
+        for (const l of parts.legs || []) {
+          l.g.rotation.x = (l.g.position.z < 0 ? -0.7 : 0.7) * tuck;
+        }
       },
-    });
+    }).then(() => { g.position.y = 0; resetPose(g); });
   }
 
   async function animateMove(move, game) {
     const g = pieces[move.from];
     if (!g) return;
-    const dur = 380 + Math.min(300, dist(move.from, move.to) * 40);
+    const d = dist(move.from, move.to);
     if (g.userData.type === "n") await leap(g, move.to);
-    else await slide(g, move.to, dur);
+    else await walkTo(g, move.to, 340 + Math.min(560, d * 130));
     if (move.flags === "castleK" || move.flags === "castleQ") {
       const rookFrom = move.flags === "castleK" ? move.to + 1 : move.to - 2;
       const rookTo = move.flags === "castleK" ? move.to - 1 : move.to + 1;
-      if (pieces[rookFrom]) await slide(pieces[rookFrom], rookTo, 320);
+      if (pieces[rookFrom]) await walkTo(pieces[rookFrom], rookTo, 420);
     }
   }
 
@@ -381,7 +425,7 @@ const Board3D = (() => {
     }
     if (g) {
       if (g.userData.type === "n") await leap(g, move.to);
-      else await slide(g, move.to, 420);
+      else await walkTo(g, move.to, 340 + Math.min(560, dist(move.from, move.to) * 130));
     }
   }
 
@@ -535,7 +579,7 @@ const Board3D = (() => {
 
   return {
     init, fullSync, getPiece, addPiece, removePiece, commitMove,
-    animateMove, quickCapture, slide, leap,
+    animateMove, quickCapture, slide, leap, walkTo, walkToPos, resetPose,
     setSelection, setLastMove, setCheck,
     spawnBurst, dustRing, shake,
     cinematicTo, cinematicRestore, flipCamera, setHome, onSkip,
