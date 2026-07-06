@@ -11,7 +11,7 @@
 
   const state = {
     mode: "ai",
-    aiLevel: "medium",
+    aiLevel: "knight",
     playerColor: "w",
     battles: true,
     selected: null,
@@ -129,8 +129,8 @@
   function aiTurn() {
     state.busy = true;
     refreshStatus("The enemy plots its move…");
-    setTimeout(() => {
-      const move = AI.bestMove(game, state.aiLevel);
+    setTimeout(async () => {
+      const move = await AI.bestMove(game, state.aiLevel);
       state.busy = false;
       if (move) executeMove(move);
     }, 450);
