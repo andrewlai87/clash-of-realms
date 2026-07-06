@@ -14,8 +14,14 @@
   --sq-dark: #976f42;
 }
 
+html, body { overscroll-behavior: none; }
+
 body {
   min-height: 100vh;
+  -webkit-tap-highlight-color: transparent;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: max(40px, env(safe-area-inset-bottom));
   font-family: "Palatino", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   background:
     radial-gradient(ellipse 90% 60% at 50% -10%, #2c2440 0%, transparent 60%),
@@ -60,6 +66,8 @@ main {
 
 #board3d-wrap {
   position: relative;
+  user-select: none;
+  -webkit-user-select: none;
   border: 2px solid var(--gold-dark);
   border-radius: 10px;
   overflow: hidden;
@@ -422,4 +430,17 @@ select {
 @media (max-width: 1020px) {
   main { flex-direction: column; align-items: center; }
   #panel { width: min(92vw, 620px); }
+}
+
+/* ---------- touch devices (iPad & co.) ---------- */
+
+@media (pointer: coarse) {
+  #panel { user-select: none; -webkit-user-select: none; }
+  .btn { padding: 12px 18px; font-size: 15px; }
+  select { padding: 11px 10px; font-size: 15px; max-width: 200px; }
+  .ctl-row label, .toggle-row { font-size: 15px; }
+  .toggle-row { gap: 24px; }
+  .toggle-row input { width: 20px; height: 20px; }
+  .promo-btn { width: 112px; padding: 14px 10px 10px; font-size: 13px; }
+  #orbit-hint { font-size: 12px; }
 }

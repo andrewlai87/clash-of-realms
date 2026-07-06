@@ -19,6 +19,18 @@ const Sound = (() => {
     return ctx;
   }
 
+  // iOS only allows audio started from a user gesture. Create/resume the
+  // context on every early tap (regardless of mute state) so that sounds
+  // fired later from async battle animations are already unlocked.
+  function unlock() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!ctx) { try { ctx = new AC(); } catch (e) { return; } }
+    if (ctx.state === "suspended") ctx.resume();
+    if (ctx.state === "running") document.removeEventListener("pointerdown", unlock);
+  }
+  document.addEventListener("pointerdown", unlock, { passive: true });
+
   function tone(freq, dur, type = "sine", vol = 0.15, when = 0, slideTo = null) {
     const c = ensure();
     if (!c) return;

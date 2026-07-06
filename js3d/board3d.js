@@ -224,33 +224,69 @@ const Board3D = (() => {
 
   function bindInput() {
     const el = renderer.domElement;
-    let down = null, dragging = false;
     el.style.touchAction = "none";
+
+    // pointerId -> {x, y}; supports mouse and multi-touch (iPad).
+    const ptrs = new Map();
+    let tapStart = null;        // where the (single) pointer went down, for tap-vs-drag
+    let dragging = false;
+    let pinch = null;           // { dist, radius } captured when a 2nd finger lands
+
+    const clampRadius = r => Math.max(6, Math.min(18, r));
+
     el.addEventListener("pointerdown", e => {
-      down = { x: e.clientX, y: e.clientY };
-      dragging = false;
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try { el.setPointerCapture(e.pointerId); } catch (err) {}
-    });
-    el.addEventListener("pointermove", e => {
-      if (!down) return;
-      const dx = e.clientX - down.x, dy = e.clientY - down.y;
-      if (!dragging && Math.hypot(dx, dy) > 6) dragging = true;
-      if (dragging && !cinematic) {
-        orbit.theta -= (e.movementX || 0) * 0.0055;
-        orbit.phi = Math.max(0.28, Math.min(1.28, orbit.phi - (e.movementY || 0) * 0.0045));
+      if (ptrs.size === 1) {
+        tapStart = { x: e.clientX, y: e.clientY };
+        dragging = false;
+      } else if (ptrs.size === 2) {
+        tapStart = null;        // two fingers is never a tap
+        const [a, b] = [...ptrs.values()];
+        pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y), radius: orbit.radius };
+      } else {
+        tapStart = null;
       }
     });
-    el.addEventListener("pointerup", e => {
-      if (down && !dragging) {
+
+    el.addEventListener("pointermove", e => {
+      const p = ptrs.get(e.pointerId);
+      if (!p) return;
+      const dx = e.clientX - p.x, dy = e.clientY - p.y;
+      p.x = e.clientX;
+      p.y = e.clientY;
+      if (ptrs.size === 2 && pinch) {
+        const [a, b] = [...ptrs.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d > 0 && !cinematic) orbit.radius = clampRadius(pinch.radius * pinch.dist / d);
+        return;
+      }
+      if (ptrs.size !== 1) return;
+      if (tapStart && !dragging &&
+          Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) > 7) dragging = true;
+      if (dragging && !cinematic) {
+        orbit.theta -= dx * 0.0055;
+        orbit.phi = Math.max(0.28, Math.min(1.28, orbit.phi - dy * 0.0045));
+      }
+    });
+
+    const release = e => {
+      const wasTap = ptrs.size === 1 && tapStart && !dragging && e.type === "pointerup";
+      ptrs.delete(e.pointerId);
+      if (ptrs.size < 2) pinch = null;
+      if (wasTap) {
         if (cinematic) { if (skipHandler) skipHandler(); }
         else pick(e);
       }
-      down = null;
-    });
+      if (ptrs.size === 0) { tapStart = null; dragging = false; }
+    };
+    el.addEventListener("pointerup", release);
+    el.addEventListener("pointercancel", release);
+
     el.addEventListener("wheel", e => {
       e.preventDefault();
       if (cinematic) return;
-      orbit.radius = Math.max(6, Math.min(18, orbit.radius * (1 + e.deltaY * 0.0011)));
+      orbit.radius = clampRadius(orbit.radius * (1 + e.deltaY * 0.0011));
     }, { passive: false });
   }
 

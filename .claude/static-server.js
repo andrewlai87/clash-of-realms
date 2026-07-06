@@ -14,6 +14,22 @@ const MIME = {
 
 http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split("?")[0]);
+  // dev-only helper: save generated assets (icons) straight to disk,
+  // restricted to PNGs under assets/icons/
+  if (req.method === "POST" && p === "/__save-icon") {
+    const name = (req.url.split("?name=")[1] || "").replace(/[^a-zA-Z0-9_.-]/g, "");
+    if (!name.endsWith(".png")) { res.writeHead(400); return res.end("png only"); }
+    const dir = path.join(root, "assets", "icons");
+    fs.mkdirSync(dir, { recursive: true });
+    const chunks = [];
+    req.on("data", c => chunks.push(c));
+    req.on("end", () => {
+      fs.writeFileSync(path.join(dir, name), Buffer.concat(chunks));
+      res.writeHead(200);
+      res.end("saved " + name);
+    });
+    return;
+  }
   if (p === "/") p = "/index.html";
   const full = path.normalize(path.join(root, p));
   if (!full.startsWith(root)) { res.writeHead(403); return res.end("forbidden"); }
