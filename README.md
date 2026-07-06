@@ -19,11 +19,16 @@ capture plays out as an animated battle.
 
 ## Play it
 
-No install needed — it's pure HTML/CSS/JavaScript:
+**▶ Play now: <https://andrewlai87.github.io/clash-of-realms/>**
+(On an iPad: open that link in Safari, then Share → *Add to Home Screen* for a
+fullscreen, offline-capable app. The original 2D version lives at
+[/classic.html](https://andrewlai87.github.io/clash-of-realms/classic.html).)
 
-- **Easiest:** double-click `index.html` to open it in your browser.
-- **Or serve it:** `python3 -m http.server 4173` in this folder, then open
-  <http://localhost:4173>.
+Running locally — it's pure HTML/CSS/JavaScript, no build step:
+
+- `node .claude/static-server.js 3000` in this folder, then open
+  <http://localhost:3000> (a server is needed for the 3D character models;
+  `python3 -m http.server 3000` works too).
 
 ## Features
 
