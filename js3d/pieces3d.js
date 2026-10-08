@@ -750,6 +750,26 @@ const Pieces3D = (() => {
     // bind-pose leg rotations, captured before any animation plays
     char.userData.legRest = ["LeftUpLeg", "RightUpLeg", "LeftLeg", "RightLeg", "LeftFoot", "RightFoot"]
       .map(n => char.getObjectByName("mixamorig" + n)).filter(Boolean).map(bn => [bn, bn.quaternion.clone()]);
+    if (cfg.seraph) {
+      // find the sword blade in the hand's own space while still in the bind pose
+      const hand = char.getObjectByName("mixamorigRightHand");
+      let sword = null;
+      char.traverse(o => { if (o.isSkinnedMesh && /sword/i.test(o.name)) sword = o; });
+      if (hand && sword) {
+        // the sword is rigid on the hand, so the hand's inverse bind matrix
+        // maps its vertices straight into the hand's own space
+        const idx = sword.skeleton.bones.indexOf(hand);
+        const toHand = sword.skeleton.boneInverses[Math.max(0, idx)];
+        const v = new THREE.Vector3(), tip = new THREE.Vector3();
+        const pos = sword.geometry.attributes.position;
+        let far = 0;
+        for (let i = 0; i < pos.count; i += 3) {
+          v.fromBufferAttribute(pos, i).applyMatrix4(sword.bindMatrix).applyMatrix4(toHand);
+          if (v.lengthSq() > far) { far = v.lengthSq(); tip.copy(v); }
+        }
+        char.userData.sword = { hand, mesh: sword, tip };
+      }
+    }
     const g = rigUp(char, clips, type, color, scale, "Slash", cfg.h);
     if (cfg.efreet) makeEfreet(g, char, cfg.h);
     if (cfg.seraph) makeSeraph(g, char, hipLen, cfg.h);
@@ -957,6 +977,28 @@ const Pieces3D = (() => {
     // following the fighting stance in the animations.
     const legRest = char.userData.legRest || [];
     g.userData.postAnimate = () => { for (const [bn, q] of legRest) bn.quaternion.copy(q); };
+    // her sword burns: flames climb the blade from the guard to the tip
+    const flames = [];
+    const sw = char.userData.sword;
+    if (sw) {
+      if (sw.mesh.material.emissive) { sw.mesh.material.emissive.setHex(0xff6a14); sw.mesh.material.emissiveIntensity = 0.35; }
+      const L = sw.tip.length();
+      const fire = (hex, k) => new THREE.MeshBasicMaterial({
+        color: new THREE.Color(hex).multiplyScalar(k), transparent: true, opacity: 0.8,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      });
+      const geo = new THREE.IcosahedronGeometry(1, 1);
+      const blade = new THREE.Group();
+      blade.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), sw.tip.clone().normalize());
+      sw.hand.add(blade);
+      for (let i = 0; i < 18; i++) {
+        const m = new THREE.Mesh(geo, fire(i % 3 === 0 ? 0xffd27a : i % 3 === 1 ? 0xff7a1e : 0xff3a0a, i % 3 === 0 ? 2.2 : 1.5));
+        blade.add(m);
+        flames.push({ m, off: i / 18, a: i * 2.399, sp: 0.8 + (i % 4) * 0.15 });
+      }
+      blade.userData.L = L;
+      flames.blade = blade;
+    }
     const aura = makeAura(g, 0xffd98a, h);
     g.userData.glide = true;
     const prev = g.userData.animate;
@@ -966,6 +1008,17 @@ const Pieces3D = (() => {
       char.position.y = lift + Math.sin(s * 1.6) * 0.03;
       if (wings) flap(wings, s);
       aura(s);
+      if (flames.blade) {
+        const L = flames.blade.userData.L;
+        for (const f of flames) {
+          const u = (s * f.sp + f.off) % 1;
+          const r = L * 0.022 * (1 - u * 0.5);
+          f.m.position.set(Math.cos(f.a + s * 4) * r, L * (0.22 + u * 0.82), Math.sin(f.a + s * 4) * r);
+          const k = L * (0.022 + 0.02 * Math.sin(Math.PI * u));
+          f.m.scale.set(k, k * 3, k);
+          f.m.material.opacity = 0.5 * Math.sin(Math.PI * Math.min(1, u * 1.1));
+        }
+      }
     };
   }
 

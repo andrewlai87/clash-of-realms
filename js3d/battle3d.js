@@ -94,7 +94,7 @@ const Battle3D = (() => {
   // fireball and the Obsidian queen calls a storm down from above.
   const SPELLS = { wb: "lightning", wq: "blade", bb: "fireball", bq: "storm" };
   const SPELL_REACH = { lightning: 2.4, fireball: 2.4, storm: 2.6, blade: 1.7 };
-  const SPELL_COLOR = { lightning: 0x7fc8ff, blade: 0xffd36a, fireball: 0xff7a1e, storm: 0xb36bff };
+  const SPELL_COLOR = { lightning: 0x7fc8ff, blade: 0xffa53a, fireball: 0xff7a1e, storm: 0xb36bff };
 
   const hdr = (hex, k) => new THREE.Color(hex).multiplyScalar(k);
 
