@@ -557,7 +557,7 @@ const Pieces3D = (() => {
   const MX_ROLE = {
     w: {
       k: { model: "paladin", h: 1.42, crown: true, metal: 0.85, rough: 0.42, tint: 2.2 },
-      q: { model: "maria", h: 1.32, crown: true, seraph: true },
+      q: { model: "maria", h: 1.32, seraph: true },
       b: { model: "ganfaul", h: 1.25, prop: "staff" },
       n: { model: "knight", h: 1.25, prop: "sword" },
       r: { model: "uriel", h: 1.3, metal: 0.8, rough: 0.4, prop: "sword" },
@@ -949,23 +949,8 @@ const Pieces3D = (() => {
         color: new THREE.Color(0xffd36a).multiplyScalar(4),
       }));
       halo.rotation.x = Math.PI / 2;                 // lies flat, hovering over her head
-      halo.position.set(0, hipLen * 0.42, 0);
+      halo.position.set(0, hipLen * 0.3, 0);
       head.add(halo);
-      // long hair down her back
-      const u = hipLen / 100;
-      const hairGeo = new THREE.CylinderGeometry(11 * u, 4 * u, 66 * u, 16, 10, true, Math.PI * 0.55, Math.PI * 0.9);
-      const hp = hairGeo.attributes.position;
-      for (let i = 0; i < hp.count; i++) {
-        const y = hp.getY(i), t = 0.5 - y / (66 * u);            // 0 at the crown, 1 at the tips
-        const a = Math.atan2(hp.getX(i), hp.getZ(i));
-        const wave = 1 + Math.sin(a * 7) * 0.06 + Math.sin(t * 9 + a * 3) * 0.05 * t;
-        hp.setXYZ(i, hp.getX(i) * wave, y, hp.getZ(i) * wave - Math.min(1, t * 2.5) * 7 * u + Math.sin(t * 5) * 1.5 * u);
-      }
-      hairGeo.computeVertexNormals();
-      const hair = new THREE.Mesh(hairGeo, new THREE.MeshStandardMaterial({ color: 0xcfa24e, roughness: 0.55, side: THREE.DoubleSide }));
-      hair.position.set(0, -20 * u, -3 * u);
-      hair.castShadow = true;
-      head.add(hair);
     }
     // Her fitted gown is part of the model (built in Blender and skinned to
     // her body). She floats, so her legs hang straight beneath it instead of
