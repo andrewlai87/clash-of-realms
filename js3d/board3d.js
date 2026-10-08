@@ -228,6 +228,8 @@ const Board3D = (() => {
         flame.material.emissiveIntensity = 2.0 + f * 0.6;
       });
     }
+    Scenery3D.build(scene, Gfx3D);
+    flames.push(t => Scenery3D.update(t));
     const l1 = new THREE.PointLight(0xff9440, 0.45, 9);
     l1.position.set(4.9, 1.2, 4.9);
     const l2 = new THREE.PointLight(0xff9440, 0.45, 9);
@@ -804,6 +806,7 @@ const Board3D = (() => {
     addEffect: fn => { effects.push(fn); },
     cinematicTo, cinematicRestore, flipCamera, setHome, onSkip,
     setRichGraphics: on => Gfx3D.setRich(on),
+    setScenery: on => Scenery3D.setEnabled(on),
     worldX, worldZ, factionYaw, yawFor,
     get camera() { return camera; },
     get scene() { return scene; },

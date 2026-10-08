@@ -251,6 +251,8 @@
   $("toggle-battles").addEventListener("change", e => { state.battles = e.target.checked; });
   $("toggle-sound").addEventListener("change", e => { Sound.setMuted(!e.target.checked); });
   $("toggle-sound").checked = !Sound.muted;
+  $("toggle-scene").checked = Scenery3D.enabled;
+  $("toggle-scene").addEventListener("change", e => { e.target.checked = Board3D.setScenery(e.target.checked); });
   $("toggle-gfx").checked = Gfx3D.rich;
   $("toggle-gfx").disabled = !Gfx3D.supported;
   $("toggle-gfx").addEventListener("change", e => { e.target.checked = Board3D.setRichGraphics(e.target.checked); });

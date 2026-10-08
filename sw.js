@@ -6,7 +6,7 @@
  * cache-first for the big immutable assets (models, vendor libs, icons).
  * Bump VERSION whenever cached assets must be invalidated.
  */
-const VERSION = "cor-v4";
+const VERSION = "cor-v5";
 
 const CODE = [
   ".",
@@ -19,6 +19,7 @@ const CODE = [
   "js/ai.js",
   "js3d/tween3d.js",
   "js3d/gfx3d.js",
+  "js3d/scenery3d.js",
   "js3d/pieces3d.js",
   "js3d/board3d.js",
   "js3d/battle3d.js",
