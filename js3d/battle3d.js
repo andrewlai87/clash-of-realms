@@ -33,7 +33,7 @@ const Battle3D = (() => {
   }
 
   // the 3D set's own creatures, where they differ from the classic titles
-  const CREATURES = { wr: "Ancient Treant", br: "Magma Golem", wn: "Ivory Wyvern", bn: "Obsidian Wyvern", bb: "Obsidian Pyromancer", wq: "Seraph Queen", bq: "Nyx, Queen of Night" };
+  const CREATURES = { wr: "Ancient Treant", br: "Magma Golem", wn: "Ivory Wyvern", bn: "Obsidian Wyvern", bb: "Obsidian Pyromancer", wq: "Seraph Queen", bq: "Nyx, Queen of Night", bk: "Vampire Lord" };
 
   function fighterName(piece) {
     return CREATURES[piece] || `${piece[0] === "w" ? "Ivory" : "Obsidian"} ${Pieces.TITLES[piece[1]]}`;

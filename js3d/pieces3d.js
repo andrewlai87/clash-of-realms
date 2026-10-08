@@ -564,7 +564,7 @@ const Pieces3D = (() => {
       p: { model: "castleguard", h: 0.98, prop: "sword" },
     },
     b: {
-      k: { model: "warrok", h: 1.42, crown: true },
+      k: { model: "vampire", h: 1.4, crown: true, crownY: 0.1 },
       q: { model: "nightshade", h: 1.32, crown: true },
       b: { model: "maw", h: 1.27, efreet: true },
       n: { model: "vampire", h: 1.25 },
@@ -737,7 +737,7 @@ const Pieces3D = (() => {
       if (head) {
         const crown = makeCrown(color, type === "k");
         crown.scale.setScalar(hipLen * 0.72);
-        crown.position.y = hipLen * 0.2;
+        crown.position.y = hipLen * (cfg.crownY ?? 0.2);
         head.add(crown);
       }
     }
