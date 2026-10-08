@@ -356,6 +356,46 @@ const Battle3D = (() => {
     await swing;
   }
 
+  // ================= flying knights =================
+  const HOVER = 0.85;
+
+  // lift off and fly to a hover point short of the defender
+  async function flyApproach(atk, to) {
+    atk.userData.play("Fly", 0.15);
+    const from = atk.position.clone();
+    const s = { t: 0 };
+    await tw(s, { t: 1 }, {
+      duration: 760, easing: "inOut",
+      onUpdate: () => {
+        atk.position.x = from.x + (to.x - from.x) * s.t;
+        atk.position.z = from.z + (to.z - from.z) * s.t;
+        atk.position.y = HOVER * Math.sin(Math.min(1, s.t * 1.25) * Math.PI / 2);
+      },
+    });
+  }
+
+  // dive onto the defender, strike, and pull back up
+  async function swoopStrike(atk, def, dir, glowColor) {
+    const up = atk.position.clone();
+    await tw(atk.rotation, { x: 0.35 }, { duration: 200, easing: "out" });     // rear back
+    await Promise.all([
+      tw(atk.position, { x: def.position.x - dir.x * 0.45, z: def.position.z - dir.z * 0.45, y: 0.3 }, { duration: 230, easing: "in" }),
+      tw(atk.rotation, { x: -0.5 }, { duration: 230, easing: "in" }),
+    ]);
+    Sound.thud();
+    Sound.clang();
+    Board3D.spawnBurst(hitPoint(def), glowColor, 20, 3.2);
+    Board3D.dustRing(def.position);
+    Board3D.shake(0.15);
+    flashHit(def);
+    clip(def, "Hit_A");
+    await pause(120);
+    await Promise.all([
+      tw(atk.position, { x: up.x, z: up.z, y: HOVER * 0.8 }, { duration: 380, easing: "out" }),
+      tw(atk.rotation, { x: 0 }, { duration: 380, easing: "out" }),
+    ]);
+  }
+
   const SPELL_FN = { lightning: lightningSpell, storm: stormSpell, fireball: fireballSpell, blade: bladeSpell };
 
   async function golemStrike(atk, def, dir, glowColor) {
@@ -461,9 +501,10 @@ const Battle3D = (() => {
     // how close the attacker gets: sword's reach, or casting range
     const type = attackerPiece[1];
     const spell = (type === "b" || type === "q") ? SPELLS[attackerPiece] : null;
-    const reach = spell ? SPELL_REACH[spell] : 0.95;
+    const flyer = !!atk.userData.flyer;
+    const reach = spell ? SPELL_REACH[spell] : flyer ? 1.25 : 0.95;
     const gap = Math.hypot(D.x - A.x, D.z - A.z);
-    const stop = gap - reach > 0.35 ? D.clone().sub(dir.clone().multiplyScalar(reach)) : A.clone();
+    const stop = (flyer || gap - reach > 0.35) ? D.clone().sub(dir.clone().multiplyScalar(reach)) : A.clone();
     const fightGap = Math.hypot(D.x - stop.x, D.z - stop.z);
 
     // camera: swoop to a low side view of where the fight happens
@@ -497,7 +538,10 @@ const Battle3D = (() => {
 
     // approach: stop short of the defender
     const approachDist = Math.hypot(stop.x - A.x, stop.z - A.z);
-    if (approachDist > 0.35) {
+    if (flyer) {
+      if (skipped) atk.position.set(stop.x, 0, stop.z);
+      else await flyApproach(atk, stop);
+    } else if (approachDist > 0.35) {
       if (type === "n" && !atk.userData.skinned) {
         // gallop-leap over the battlefield
         const s = { t: 0 };
@@ -524,6 +568,7 @@ const Battle3D = (() => {
 
     const glowColor = Pieces3D.palette(attackerPiece[0]).glow;
     if (spell) await SPELL_FN[spell](atk, def, dir, SPELL_COLOR[spell]);
+    else if (flyer) await swoopStrike(atk, def, dir, glowColor);
     else if (type === "r" && !atk.userData.skinned) await golemStrike(atk, def, dir, glowColor);
     else await meleeStrike(atk, def, dir, glowColor);
 
@@ -533,7 +578,15 @@ const Battle3D = (() => {
 
     // claim the square
     const claimDist = Math.hypot(D.x - atk.position.x, D.z - atk.position.z);
-    if (!skipped && claimDist > 1.3) {
+    if (flyer) {
+      // glide in and land on the captured square
+      await Promise.all([
+        tw(atk.position, { x: D.x, z: D.z, y: 0 }, { duration: 520, easing: "inOut" }),
+        faceYaw(atk, Board3D.factionYaw(atk.userData.color), 520),
+      ]);
+      atk.rotation.x = 0;
+      if (!skipped) atk.userData.play("Idle", 0.3);
+    } else if (!skipped && claimDist > 1.3) {
       await Board3D.walkToPos(atk, D.x, D.z, 320 + claimDist * 170);
       await faceYaw(atk, Board3D.factionYaw(atk.userData.color), 220);
     } else {

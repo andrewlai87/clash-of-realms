@@ -396,6 +396,7 @@ const Pieces3D = (() => {
       loader.load(url, g => { cb(g); res(true); }, undefined, () => res(false)));
     const jobs = [
       ...Object.entries(MX_FILES).map(([n, u]) => quiet(u, g => { MX[n] = g; })),
+      quiet(MOUNT_FILE, g => { mountSrc = g; }),
       ...Object.entries(MX_ANIMS).map(([n, u]) => quiet(u, g => {
         const clip = g.animations[0];
         if (!clip) return;
@@ -667,7 +668,107 @@ const Pieces3D = (() => {
     return g;
   }
 
+  // ================= flying mounts: the knights =================
+  // Knights are winged drakes: they stand on their square, and fly to move
+  // or attack, which is why they alone can pass over other pieces.
+  const MOUNT_FILE = "assets/models/mx/wyvern.glb";
+  const MOUNT_CLIPS = { Idle: "metarig|idol", Fly: "metarig|flaping", Jump_Full_Long: "metarig|flaping" };
+  let mountSrc = null;       // loaded gltf
+  let mountBox = null;       // idle-pose bounds in the model's own units
+  let ivoryMaps = null;      // original texture uuid -> pale recolour
+
+  // true bounds of a skinned model in its current pose (Box3 can't see skinning)
+  function skinnedBounds(root) {
+    root.updateMatrixWorld(true);
+    const box = new THREE.Box3(), v = new THREE.Vector3();
+    root.traverse(o => {
+      if (!o.isSkinnedMesh) return;
+      o.skeleton.update();
+      const pos = o.geometry.attributes.position;
+      const step = Math.max(1, Math.floor(pos.count / 1200));
+      for (let i = 0; i < pos.count; i += step) {
+        o.boneTransform(i, v);
+        box.expandByPoint(v.applyMatrix4(o.matrixWorld));
+      }
+    });
+    return box;
+  }
+
+  // bleach a colour texture to ivory, keeping the golden belly plates
+  function paleTexture(tex) {
+    const img = tex.image;
+    const c = document.createElement("canvas");
+    c.width = img.width; c.height = img.height;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height), px = d.data;
+    for (let i = 0; i < px.length; i += 4) {
+      const r = px[i], g = px[i + 1], b = px[i + 2];
+      if (r > 150 && g > 105 && g > b * 1.7) continue;          // gold stays gold
+      const l = 0.3 * r + 0.59 * g + 0.11 * b;
+      const k = Math.min(255, l * 1.55 + 38);
+      px[i] = k * 0.98 + r * 0.04; px[i + 1] = k * 0.95 + g * 0.03; px[i + 2] = k * 0.9 + b * 0.03;
+    }
+    ctx.putImageData(d, 0, 0);
+    const out = tex.clone();
+    out.source = new THREE.Source(c);
+    out.needsUpdate = true;
+    return out;
+  }
+
+  function buildMount(type, color) {
+    if (type !== "n" || !mountSrc) return null;
+    if (!mountBox) {
+      const probe = THREE.SkeletonUtils.clone(mountSrc.scene);
+      const idle = mountSrc.animations.find(a => a.name === MOUNT_CLIPS.Idle);
+      const m = new THREE.AnimationMixer(probe);
+      if (idle) { m.clipAction(idle).play(); m.setTime(0.01); }
+      mountBox = skinnedBounds(probe);
+    }
+    const root = THREE.SkeletonUtils.clone(mountSrc.scene);
+    if (color === "w" && !ivoryMaps) ivoryMaps = {};
+    root.traverse(o => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.receiveShadow = true;
+      o.frustumCulled = false;
+      o.material = o.material.clone();
+      if (color === "w" && o.material.map && o.material.map.image) {
+        const key = o.material.map.uuid;
+        if (!ivoryMaps[key]) ivoryMaps[key] = paleTexture(o.material.map);
+        o.material.map = ivoryMaps[key];
+        if (o.material.emissive) o.material.emissive.multiplyScalar(0.6);
+      }
+    });
+    // centre the model on its square and stand it on the board
+    const size = mountBox.getSize(new THREE.Vector3());
+    const ctr = mountBox.getCenter(new THREE.Vector3());
+    const shift = new THREE.Group();
+    shift.position.set(-ctr.x, -mountBox.min.y, -ctr.z);
+    shift.add(root);
+    const char = new THREE.Group();
+    char.add(shift);
+    const scale = 1.45 / size.z;
+    const clips = [];
+    for (const [name, srcName] of Object.entries(MOUNT_CLIPS)) {
+      const src = mountSrc.animations.find(a => a.name === srcName);
+      if (src) { const c = src.clone(); c.name = name; clips.push(c); }
+    }
+    const g = rigUp(char, clips, type, color, scale, null, size.y * scale * 0.8);
+    g.userData.flyer = true;
+    const P = palette(color);
+    const base = [
+      add(g, cyl(0.31, 0.34, 0.035, 28), mat(color === "w" ? 0xf2ecdc : 0x1d1a22, { roughness: 0.4 }), 0, 0.018, 0),
+      add(g, cyl(0.325, 0.325, 0.012, 28), goldMat(color === "w" ? P.trim : 0x9a2f3c), 0, 0.04, 0),
+    ];
+    // the base stays behind when the drake takes off
+    g.userData.animate = () => { const down = g.position.y < 0.03; base[0].visible = base[1].visible = down; };
+    return g;
+  }
+
   function build(type, color) {
+    const mount = buildMount(type, color);
+    if (mount) return mount;
     const g = buildMixamo(type, color) || (type !== "r" && modelsReady && buildSkinned(type, color));
     if (g) return g;
     return buildProcedural(type, color);
