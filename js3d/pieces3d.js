@@ -397,6 +397,7 @@ const Pieces3D = (() => {
     const jobs = [
       ...Object.entries(MX_FILES).map(([n, u]) => quiet(u, g => { MX[n] = g; })),
       quiet(MOUNT_FILE, g => { mountSrc = g; }),
+      quiet(MAGE_FILE, g => { mageSrc = g; }),
       ...Object.entries(HEAVY).map(([c, cfg]) => quiet(cfg.file, g => { heavySrc[c] = g; })),
       ...Object.entries(MX_ANIMS).map(([n, u]) => quiet(u, g => {
         const clip = g.animations[0];
@@ -620,22 +621,25 @@ const Pieces3D = (() => {
 
   // An efreet: the demon's legs are folded away and replaced by a whirling
   // column of fire, his skin smoulders, and he teleports instead of walking.
-  function makeEfreet(g, char, h) {
-    for (const n of ["mixamorigLeftUpLeg", "mixamorigRightUpLeg"]) {
-      const b = char.getObjectByName(n);
-      if (b) b.scale.setScalar(0.001);
+  function makeEfreet(g, char, h, opts = {}) {
+    if (!opts.keepLegs) {
+      for (const n of ["mixamorigLeftUpLeg", "mixamorigRightUpLeg"]) {
+        const b = char.getObjectByName(n);
+        if (b) b.scale.setScalar(0.001);
+      }
     }
+    const lift = opts.lift || 0;
     char.traverse(o => {
       if (o.isMesh && o.material.emissive) {
         o.material.emissive.setHex(0xff5a14);
-        o.material.emissiveIntensity = 0.22;
+        o.material.emissiveIntensity = opts.glow ?? 0.22;
       }
     });
     const fire = (hex, k, opacity) => new THREE.MeshBasicMaterial({
       color: new THREE.Color(hex).multiplyScalar(k), transparent: true, opacity,
       blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
     });
-    const top = h * 0.6;          // roughly the waist
+    const top = h * (opts.top ?? 0.6);          // roughly the waist
     const column = new THREE.Group();
     const shells = [];
     // nested flame funnels: narrow at the ground, flaring out under the torso
@@ -694,7 +698,7 @@ const Pieces3D = (() => {
         f.m.scale.set(k, k * 2.3, k);
         f.m.material.opacity = 0.85 * Math.sin(Math.PI * Math.min(1, u * 1.15));
       }
-      char.position.y = Math.sin(s * 2.2) * 0.025;     // hover
+      char.position.y = lift + Math.sin(s * 2.2) * 0.025;     // hover
     };
   }
 
@@ -848,6 +852,79 @@ const Pieces3D = (() => {
     return g;
   }
 
+  // ================= the pyromancer: Obsidian's bishop =================
+  // A masked dark mage wreathed in fire. The model ships as a single pose,
+  // so everything he does is layered on in code: he hovers in a vortex of
+  // flame, his cloak stirs, fire burns in his hands, and he raises an arm
+  // to cast. He teleports instead of walking.
+  const MAGE_FILE = "assets/models/mx/shadowmage.glb";
+  let mageSrc = null;
+
+  function buildFireMage(type, color) {
+    if (type !== "b" || color !== "b" || !mageSrc) return null;
+    const char = THREE.SkeletonUtils.clone(mageSrc.scene);
+    char.traverse(o => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.receiveShadow = true;
+      o.frustumCulled = false;
+      o.material = o.material.clone();
+    });
+    const pose = mageSrc.animations.find(a => /ActionPose/.test(a.name)) || mageSrc.animations[0];
+    const idle = pose.clone();
+    idle.name = "Idle";
+    const h = 1.3;
+    const g = rigUp(char, [idle], type, color, h, null, h);
+    makeEfreet(g, char, h, { keepLegs: true, lift: 0.16, top: 0.5, glow: 0.02 });
+
+    const bone = re => { let hit = null; char.traverse(o => { if (!hit && o.isBone && re.test(o.name)) hit = o; }); return hit; };
+    // fire held in both hands
+    const handFire = [];
+    for (const re of [/L_Hand_\d+$/, /R_Hand_\d+$/]) {
+      const hand = bone(re);
+      if (!hand) continue;
+      const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.075, 1), new THREE.MeshBasicMaterial({
+        color: new THREE.Color(0xff8a2a).multiplyScalar(4), transparent: true, opacity: 0.9,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      }));
+      hand.add(orb);
+      handFire.push(orb);
+    }
+    const cloak = [];
+    char.traverse(o => { if (o.isBone && /^Cloak\d/.test(o.name)) cloak.push({ b: o, q: o.quaternion.clone() }); });
+    const armR = bone(/R_Upperarm_\d+$/), armL = bone(/L_Upperarm_\d+$/);
+    const rest = [armR, armL].map(b => b && b.quaternion.clone());
+    const side = new THREE.Vector3(), rot = new THREE.Quaternion(), pq = new THREE.Quaternion(), tmp = new THREE.Quaternion();
+    const X = new THREE.Vector3(1, 0, 0);
+    g.userData.castAmt = 0;       // 0..1, driven by the battle code
+    g.userData.postAnimate = () => {
+      const s = performance.now() * 0.001;
+      cloak.forEach((c, i) => {
+        tmp.setFromAxisAngle(X, Math.sin(s * 2.4 - i * 0.6) * 0.07);
+        c.b.quaternion.copy(c.q).multiply(tmp);
+      });
+      handFire.forEach((o, i) => {
+        // the rig's bones are in centimetres; size the flame in board units
+        if (!o.userData.k) { o.parent.getWorldScale(side); o.userData.k = 1 / side.x; o.position.set(0, 0.09 * o.userData.k, 0); }
+        o.scale.setScalar(o.userData.k * (0.85 + Math.sin(s * 9 + i * 2) * 0.2 + g.userData.castAmt * 0.9));
+      });
+      // raise both arms toward the target while casting
+      side.set(1, 0, 0).applyQuaternion(g.quaternion);
+      [armR, armL].forEach((b, i) => {
+        if (!b) return;
+        b.quaternion.copy(rest[i]);
+        if (g.userData.castAmt < 0.001) return;
+        b.parent.getWorldQuaternion(pq);
+        rot.setFromAxisAngle(side, g.userData.castAmt * 1.25);
+        b.quaternion.premultiply(pq).premultiply(rot).premultiply(pq.invert());
+      });
+    };
+    const P = palette(color);
+    add(g, cyl(0.31, 0.34, 0.035, 28), mat(0x1d1a22, { roughness: 0.4 }), 0, 0.018, 0);
+    add(g, cyl(0.325, 0.325, 0.012, 28), goldMat(0x9a2f3c), 0, 0.04, 0);
+    return g;
+  }
+
   // ================= colossi: the rooks =================
   // Obsidian fields a molten rock golem, Ivory an ancient tree giant.
   // Both files are pre-normalised (1 unit tall, feet at the origin).
@@ -911,7 +988,7 @@ const Pieces3D = (() => {
   }
 
   function build(type, color) {
-    const mount = buildMount(type, color) || buildHeavy(type, color);
+    const mount = buildMount(type, color) || buildHeavy(type, color) || buildFireMage(type, color);
     if (mount) return mount;
     const g = buildMixamo(type, color) || (type !== "r" && modelsReady && buildSkinned(type, color));
     if (g) return g;

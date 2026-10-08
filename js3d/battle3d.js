@@ -33,7 +33,7 @@ const Battle3D = (() => {
   }
 
   // the 3D set's own creatures, where they differ from the classic titles
-  const CREATURES = { wr: "Ancient Treant", br: "Magma Golem", wn: "Ivory Wyvern", bn: "Obsidian Wyvern", bb: "Efreet" };
+  const CREATURES = { wr: "Ancient Treant", br: "Magma Golem", wn: "Ivory Wyvern", bn: "Obsidian Wyvern", bb: "Obsidian Pyromancer" };
 
   function fighterName(piece) {
     return CREATURES[piece] || `${piece[0] === "w" ? "Ivory" : "Obsidian"} ${Pieces.TITLES[piece[1]]}`;
@@ -127,6 +127,14 @@ const Battle3D = (() => {
 
   // casting gesture; resolves when the caster has finished it
   function castPose(atk) {
+    if ("castAmt" in atk.userData) {
+      // pose-only caster: its arms are raised in code
+      return (async () => {
+        await tw(atk.userData, { castAmt: 1 }, { duration: 320, easing: "out" });
+        await pause(650);
+        await tw(atk.userData, { castAmt: 0 }, { duration: 380, easing: "inOut" });
+      })();
+    }
     if (atk.userData.skinned) return clip(atk, "Spellcast_Shoot");
     const armR = atk.userData.parts && atk.userData.parts.armR;
     return (async () => {
