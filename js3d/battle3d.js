@@ -33,7 +33,7 @@ const Battle3D = (() => {
   }
 
   // the 3D set's own creatures, where they differ from the classic titles
-  const CREATURES = { wr: "Ancient Treant", br: "Magma Golem", wn: "Ivory Wyvern", bn: "Obsidian Wyvern", bb: "Obsidian Pyromancer", wq: "Seraph Queen", bq: "Nyx, Queen of Night", bk: "Vampire Lord", wb: "Archmage of Light" };
+  const CREATURES = { wr: "Ancient Treant", br: "Magma Golem", wn: "Sun Phoenix", bn: "Obsidian Wyvern", bb: "Obsidian Pyromancer", wq: "Seraph Queen", bq: "Nyx, Queen of Night", bk: "Vampire Lord", wb: "Archmage of Light" };
 
   function fighterName(piece) {
     return CREATURES[piece] || `${piece[0] === "w" ? "Ivory" : "Obsidian"} ${Pieces.TITLES[piece[1]]}`;
@@ -306,14 +306,14 @@ const Battle3D = (() => {
     Board3D.spawnBurst(end, 0x3a2418, 10, 2.4);
     if (!skipped) {
       for (const [color, k, size, ms] of [[0xffe6a0, 5, 0.75, 300], [hex, 2.5, 1.15, 460]]) {
-        const shell = glowMesh(new THREE.SphereGeometry(1, 28, 18), color, k, 0.9);
+        const shell = glowMesh(new THREE.SphereGeometry(1, 28, 18), color, k, 0.6);
         shell.position.copy(end);
         shell.scale.setScalar(0.12);
         Board3D.scene.add(shell);
         const e = { k: 0.12 };
         Tween.to(e, { k: size }, {
           duration: ms, easing: "out",
-          onUpdate: v => { shell.scale.setScalar(e.k); shell.material.opacity = 0.9 * (1 - v); },
+          onUpdate: v => { shell.scale.setScalar(e.k); shell.material.opacity = 0.6 * (1 - v); },
         }).then(() => discard(shell));
       }
     }
@@ -390,14 +390,94 @@ const Battle3D = (() => {
     });
   }
 
+  // a burst of fire: two expanding shells, sparks and a flash
+  function fireBlast(pos, hex) {
+    flashLight(pos, hex, 10, 650, 9);
+    Board3D.spawnBurst(pos, 0xffd27a, 26, 3.6);
+    if (skipped) return;
+    for (const [color, k, size, ms] of [[0xfff0b0, 4, 0.42, 280], [hex, 1.6, 0.68, 420]]) {
+      const shell = glowMesh(new THREE.SphereGeometry(1, 28, 18), color, k, 0.6);
+      shell.position.copy(pos);
+      shell.scale.setScalar(0.12);
+      Board3D.scene.add(shell);
+      const e = { k: 0.12 };
+      Tween.to(e, { k: size }, {
+        duration: ms, easing: "out",
+        onUpdate: v => { shell.scale.setScalar(e.k); shell.material.opacity = 0.6 * (1 - v); },
+      }).then(() => discard(shell));
+    }
+  }
+
+  // the phoenix burns down to a pile of glowing ash
+  async function ashDeath(def) {
+    const hex = 0xffb347;
+    const body = def.position.clone().add(new THREE.Vector3(0, def.userData.lift || 0.6, 0));
+    Sound.fire();
+    fireBlast(body, hex);
+    const pile = new THREE.Group();
+    pile.position.set(def.position.x, 0.065, def.position.z);
+    const heap = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.14, 12), new THREE.MeshStandardMaterial({ color: 0x2b2623, roughness: 1, flatShading: true }));
+    heap.position.y = 0.07;
+    pile.add(heap);
+    const coals = [];
+    for (let i = 0; i < 9; i++) {
+      const c = glowMesh(new THREE.IcosahedronGeometry(0.022, 0), i % 2 ? 0xff7a1e : 0xffd27a, 3.5);
+      const a = i * 2.4, r = 0.05 + (i % 4) * 0.045;
+      c.position.set(Math.cos(a) * r, 0.05 + (0.2 - r) * 0.4, Math.sin(a) * r);
+      pile.add(c);
+      coals.push(c);
+    }
+    pile.scale.setScalar(0.01);
+    if (!skipped) Board3D.scene.add(pile);
+    const s = { k: 1 };
+    await tw(s, { k: 0.02 }, {
+      duration: 620, easing: "in",
+      onUpdate: v => {
+        def.scale.setScalar(s.k);
+        def.position.y = -(def.userData.lift || 0.6) * v * 0.9;       // the embers fall to the square
+        pile.scale.setScalar(Math.max(0.01, v));
+        if (!skipped && Math.random() < 0.5) Board3D.spawnBurst(body.clone().setY(body.y * (1 - v) + 0.15), hex, 3, 1.6);
+      },
+    });
+    def.visible = false;
+    await pause(700);
+    // the coals die, then the ash blows away
+    const f = { k: 1 };
+    Tween.to(f, { k: 0 }, {
+      duration: 1100, easing: "in",
+      onUpdate: () => { for (const c of coals) c.material.opacity = f.k; pile.scale.set(1, Math.max(0.05, f.k), 1); },
+    }).then(() => discard(pile));
+  }
+
   // dive onto the defender, strike, and pull back up
   async function swoopStrike(atk, def, dir, glowColor) {
     const up = atk.position.clone();
+    const fire = !!atk.userData.fireDive, lift = atk.userData.lift || 0;
     await tw(atk.rotation, { x: 0.35 }, { duration: 200, easing: "out" });     // rear back
+    if (fire) Sound.fire();
+    const puffGeo = fire && new THREE.IcosahedronGeometry(0.09, 1);
     await Promise.all([
-      tw(atk.position, { x: def.position.x - dir.x * 0.45, z: def.position.z - dir.z * 0.45, y: 0.3 }, { duration: 230, easing: "in" }),
-      tw(atk.rotation, { x: -0.5 }, { duration: 230, easing: "in" }),
+      tw(atk.position, { x: def.position.x - dir.x * 0.35, z: def.position.z - dir.z * 0.35, y: fire ? 0.35 - lift : 0.3 }, {
+        duration: fire ? 300 : 230, easing: "in",
+        onUpdate: () => {
+          if (!fire || skipped) return;
+          // a comet tail of flame behind the dive
+          const puff = glowMesh(puffGeo, Math.random() < 0.5 ? 0xffd27a : 0xff7a1e, 2.8, 0.9);
+          puff.position.copy(atk.position).add(new THREE.Vector3((Math.random() - 0.5) * 0.25, lift + (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.25));
+          Board3D.scene.add(puff);
+          let life = 0.45;
+          Board3D.addEffect(dt => {
+            life -= dt;
+            puff.scale.setScalar(Math.max(0.01, life / 0.45) * 1.6);
+            puff.material.opacity = Math.max(0, life / 0.45) * 0.9;
+            if (life <= 0) { discard(puff); return false; }
+            return true;
+          });
+        },
+      }),
+      tw(atk.rotation, { x: -0.5 }, { duration: fire ? 300 : 230, easing: "in" }),
     ]);
+    if (fire) { Sound.boom(); fireBlast(hitPoint(def), 0xff8a1e); }
     Sound.thud();
     Sound.clang();
     Board3D.spawnBurst(hitPoint(def), glowColor, 20, 3.2);
@@ -468,6 +548,7 @@ const Battle3D = (() => {
   }
 
   async function death(def) {
+    if (def.userData.ashDeath) return ashDeath(def);
     Sound.death();
     if (def.userData.skinned && def.userData.actions.Death_A) {
       await clip(def, "Death_A");

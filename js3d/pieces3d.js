@@ -397,6 +397,7 @@ const Pieces3D = (() => {
     const jobs = [
       ...Object.entries(MX_FILES).map(([n, u]) => quiet(u, g => { MX[n] = g; })),
       quiet(MOUNT_FILE, g => { mountSrc = g; }),
+      quiet(PHX_FILE, g => { phxSrc = g; }),
       quiet("assets/models/mx/props.glb", g => { armsSrc = g; }),
       quiet(MAGE_FILE, g => { mageSrc = g; }),
       quiet(WINGS_FILE, g => { prepWings(g); }),
@@ -1239,6 +1240,104 @@ const Pieces3D = (() => {
     return g;
   }
 
+  // ================= the sun phoenix: Ivory's knight =================
+  // A firebird in white and gold. It never lands: it hovers over its square
+  // on slow wingbeats, trailing flame, dives burning onto its prey, and
+  // burns down to ash when it is taken.
+  const PHX_FILE = "assets/models/mx/phoenix.glb";
+  let phxSrc = null;
+  const phxMaps = {};
+
+  // recolour a texture: plumage to ivory and gold, or (glow maps) to sunfire
+  function sunTexture(tex, glowMap) {
+    const key = tex.uuid + (glowMap ? "g" : "c");
+    if (phxMaps[key]) return phxMaps[key];
+    const img = tex.image, c = document.createElement("canvas");
+    c.width = img.width; c.height = img.height;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height), px = d.data;
+    for (let i = 0; i < px.length; i += 4) {
+      const r = px[i], g = px[i + 1], b = px[i + 2];
+      const l = 0.3 * r + 0.59 * g + 0.11 * b, sat = Math.max(r, g, b) - Math.min(r, g, b);
+      if (glowMap) {
+        const k = Math.min(255, l * 1.5);
+        px[i] = k; px[i + 1] = k * 0.8; px[i + 2] = k * 0.4;
+      } else {
+        // dull feathers turn ivory; the vivid ones turn gold
+        const w = Math.min(1, sat / 110);
+        const iv = Math.min(255, l * 1.5 + 85);
+        px[i] = iv * (1 - w) + Math.min(255, l * 1.9 + 60) * w;
+        px[i + 1] = iv * 0.96 * (1 - w) + Math.min(255, l * 1.45 + 30) * w;
+        px[i + 2] = iv * 0.86 * (1 - w) + l * 0.55 * w;
+      }
+    }
+    ctx.putImageData(d, 0, 0);
+    const out = tex.clone();
+    out.source = new THREE.Source(c);
+    out.needsUpdate = true;
+    return (phxMaps[key] = out);
+  }
+
+  function buildPhoenix(type, color) {
+    if (type !== "n" || color !== "w" || !phxSrc) return null;
+    const clip0 = phxSrc.animations[0];
+    const root = THREE.SkeletonUtils.clone(phxSrc.scene);
+    root.traverse(o => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.frustumCulled = false;
+      const m = o.material = o.material.clone();
+      m.transparent = false; m.alphaTest = 0.3; m.depthWrite = true; m.side = THREE.DoubleSide;
+      if (m.map && m.map.image) m.map = sunTexture(m.map, false);
+      if (m.emissiveMap && m.emissiveMap.image) { m.emissiveMap = sunTexture(m.emissiveMap, true); m.emissive.setHex(0xffffff); m.emissiveIntensity = 1.5; }
+    });
+    // the file is one unit tall, tail-tip on the ground, beak along +x
+    root.rotation.y = -Math.PI / 2;
+    const char = new THREE.Group();
+    char.add(root);
+    const scale = 1.2;
+    const clips = [];
+    if (clip0) for (const n of ["Idle", "Fly", "Jump_Full_Long"]) { const c = clip0.clone(); c.name = n; clips.push(c); }
+    const lift = 0.42;
+    const g = rigUp(char, clips, type, color, scale, null, lift + 0.3);
+    g.userData.flyer = true;
+    g.userData.fireDive = true;
+    g.userData.ashDeath = true;
+    g.userData.lift = lift;
+    // tongues of sunfire streaming off the bird
+    const flames = [];
+    const geo = new THREE.IcosahedronGeometry(0.05, 1);
+    for (let i = 0; i < 14; i++) {
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        color: new THREE.Color(i % 3 ? 0xffb347 : 0xfff0b0).multiplyScalar(i % 3 ? 1.3 : 1.9), transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      }));
+      g.add(m);
+      flames.push({ m, off: i / 14, a: i * 2.399, sp: 0.7 + (i % 4) * 0.14 });
+    }
+    const P = palette(color);
+    const base = [
+      add(g, cyl(0.31, 0.34, 0.035, 28), mat(0xf2ecdc, { roughness: 0.4 }), 0, 0.018, 0),
+      add(g, cyl(0.325, 0.325, 0.012, 28), goldMat(P.trim), 0, 0.04, 0),
+    ];
+    g.userData.animate = t => {
+      const s = t * 0.001;
+      char.position.y = lift + Math.sin(s * 1.5) * 0.05;
+      const down = Math.abs(g.position.y) < 0.03;
+      base[0].visible = base[1].visible = down;
+      for (const f of flames) {
+        const u = (s * f.sp + f.off) % 1;
+        const r = 0.16 * (1 - u * 0.6);
+        f.m.position.set(Math.cos(f.a + s) * r, char.position.y + 0.5 - u * 0.7, Math.sin(f.a + s) * r + 0.1 + u * 0.45);
+        const k = 0.5 + Math.sin(Math.PI * u) * 0.9;
+        f.m.scale.set(k, k * 2, k);
+        f.m.material.opacity = 0.5 * Math.sin(Math.PI * Math.min(1, u * 1.1));
+      }
+    };
+    return g;
+  }
+
   // ================= colossi: the rooks =================
   // Obsidian fields a molten rock golem, Ivory an ancient tree giant.
   // Both files are pre-normalised (1 unit tall, feet at the origin).
@@ -1302,7 +1401,7 @@ const Pieces3D = (() => {
   }
 
   function build(type, color) {
-    const mount = buildMount(type, color) || buildHeavy(type, color) || buildFireMage(type, color) || buildNyx(type, color);
+    const mount = buildPhoenix(type, color) || buildMount(type, color) || buildHeavy(type, color) || buildFireMage(type, color) || buildNyx(type, color);
     if (mount) return mount;
     const g = buildMixamo(type, color) || (type !== "r" && modelsReady && buildSkinned(type, color));
     if (g) return g;

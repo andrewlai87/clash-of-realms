@@ -1,7 +1,9 @@
-# usage: blender -b --factory-startup --python optimize.py -- in.glb out.glb targetTris texSize
+# usage: blender -b --factory-startup --python optimize.py -- in.glb out.glb targetTris texSize [imageFormat]
+# (pass AUTO as imageFormat to keep PNG textures that carry alpha, e.g. feathers)
 import bpy, sys
 a = sys.argv[sys.argv.index("--") + 1:]
 src, dst, target, tex = a[0], a[1], int(a[2]), int(a[3])
+fmt = a[4] if len(a) > 4 else "JPEG"
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=src)
 meshes = [o for o in bpy.data.objects if o.type == "MESH"]
@@ -60,7 +62,7 @@ bpy.context.view_layer.update()
 mn2, mx2 = bounds(f0)
 print("NORMALISED", [round(v, 2) for v in mn2], [round(v, 2) for v in mx2])
 want = dict(filepath=dst, export_format="GLB", export_yup=True, export_animations=True, export_skins=True,
-            export_image_format="JPEG", export_image_quality=82, export_jpeg_quality=82,
+            export_image_format=fmt, export_image_quality=82, export_jpeg_quality=82,
             export_optimize_animation_size=True, export_morph=False, export_cameras=False, export_lights=False)
 props = set(bpy.ops.export_scene.gltf.get_rna_type().properties.keys())
 bpy.ops.export_scene.gltf(**{k: v for k, v in want.items() if k in props})
