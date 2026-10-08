@@ -897,7 +897,7 @@ const Pieces3D = (() => {
       b: { model: "ganfaul", h: 1.25, prop: "staff", archmage: true },
       n: { model: "knight", h: 1.25, prop: "sword" },
       r: { model: "uriel", h: 1.3, metal: 0.8, rough: 0.4, prop: "sword" },
-      p: { model: "castleguard", h: 0.98, arms: true, shieldOut: 9 },
+      p: { model: "castleguard", h: 0.98, arms: true, shieldOut: 9, halberd: true },
     },
     b: {
       k: { model: "vampire", h: 1.4, crown: true, crownY: 0.1 },
@@ -1040,6 +1040,83 @@ const Pieces3D = (() => {
     };
   }
 
+  // ---- the Ivory footmen are halberdiers ----
+  // A halberd in hand units (about a centimetre), butt at the origin, head up +y,
+  // axe blade toward -z (the way the piece faces).
+  function makeHalberd() {
+    const g = new THREE.Group();
+    const wood = new THREE.MeshStandardMaterial({ color: 0x4a3423, roughness: 0.8 });
+    const steel = new THREE.MeshStandardMaterial({ color: 0xdfe4ec, roughness: 0.28, metalness: 0.92 });
+    const gold = new THREE.MeshStandardMaterial({ color: 0xe2b23c, roughness: 0.35, metalness: 0.8 });
+    add(g, cyl(2.3, 2.5, 196, 10), wood, 0, 98, 0);
+    add(g, cone(2.7, 8, 8), steel, 0, 4, 0, Math.PI);                 // butt spike
+    add(g, cyl(3, 3, 34, 10), steel, 0, 186, 0);                     // socket and langets
+    add(g, cyl(3.5, 3.5, 2.6, 12), gold, 0, 169, 0);
+    add(g, cyl(3.5, 3.5, 2.6, 12), gold, 0, 203, 0);
+    const spike = add(g, cone(4, 44, 4), steel, 0, 226, 0);            // top spike, diamond in section
+    spike.scale.z = 0.45;
+    const plate = (pts, depth) => {
+      const sh = new THREE.Shape();
+      sh.moveTo(pts[0][0], pts[0][1]);
+      for (const q of pts.slice(1)) q.length === 4 ? sh.quadraticCurveTo(q[0], q[1], q[2], q[3]) : sh.lineTo(q[0], q[1]);
+      sh.closePath();
+      const geo = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelThickness: 0.35, bevelSize: 0.5, bevelSegments: 1 });
+      geo.translate(0, 0, -depth / 2);
+      geo.rotateY(Math.PI / 2);                                           // shape +x becomes the blade's reach, toward -z
+      return geo;
+    };
+    // crescent axe blade, with a spur behind it
+    add(g, plate([[2, -13], [18, -27], [32, -10, 32, 0], [32, 10, 18, 27], [2, 13]], 1.4), steel, 0, 187, 0);
+    add(g, plate([[-2, 8], [-21, 1], [-14, -3, -2, -7]], 1.4), steel, 0, 189, 0);
+    g.traverse(o => { if (o.isMesh) o.receiveShadow = false; });
+    return g;
+  }
+
+  // a small round buckler; its face looks along +y
+  function makeBuckler() {
+    const g = new THREE.Group();
+    const steel = new THREE.MeshStandardMaterial({ color: 0xd9dee8, roughness: 0.32, metalness: 0.9 });
+    const gold = new THREE.MeshStandardMaterial({ color: 0xe2b23c, roughness: 0.35, metalness: 0.8 });
+    const face = add(g, sph(15, 20), steel, 0, 0, 0);
+    face.scale.y = 0.22;
+    add(g, new THREE.TorusGeometry(14.5, 1.1, 8, 28), gold, 0, 0.4, 0, Math.PI / 2);
+    const boss = add(g, sph(4.4, 12), gold, 0, 2.4, 0);
+    boss.scale.y = 0.8;
+    return g;
+  }
+
+  // The halberd stands upright in his fist, butt on the ground, whatever the
+  // arm is doing; when he strikes (or falls) it goes with the hand instead.
+  function makeHalberdier(g, char) {
+    const hand = char.getObjectByName("mixamorigRightHand");
+    if (!hand) return;
+    const grip = new THREE.Group(), halberd = makeHalberd();
+    halberd.scale.setScalar(0.9);
+    grip.add(halberd);
+    hand.add(grip);
+    grip.position.set(0, 9, 2);
+    const inFist = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));   // head out of the top of the fist
+    const hq = new THREE.Quaternion(), gq = new THREE.Quaternion(), up = new THREE.Quaternion();
+    const hp = new THREE.Vector3(), hs = new THREE.Vector3();
+    let stand = 1;
+    const post = g.userData.postAnimate;
+    g.userData.postAnimate = () => {
+      if (post) post();
+      const acts = g.userData.actions || {};
+      const busy = ["Slash", "Death_A"].some(n => acts[n] && acts[n].isRunning() && acts[n].getEffectiveWeight() > 0.3);
+      stand += ((busy ? 0 : 1) - stand) * 0.22;
+      hand.getWorldQuaternion(hq);
+      g.getWorldQuaternion(gq);
+      up.copy(hq).invert().multiply(gq);                  // upright, blade toward his front
+      grip.quaternion.copy(inFist).slerp(up, stand);
+      // slide the shaft through the fist so the butt rests on the ground
+      hand.getWorldPosition(hp);
+      hand.getWorldScale(hs);
+      const reach = Math.max(20, Math.min(120, (hp.y - g.position.y - 0.04) / hs.y));
+      halberd.position.y = -(62 + (reach - 62) * stand);
+    };
+  }
+
   function buildMixamo(type, color) {
     const cfg = MX_ROLE[color] && MX_ROLE[color][type];
     if (!cfg || !MX[cfg.model] || !MX_SRC.Slash) return null;
@@ -1066,6 +1143,7 @@ const Pieces3D = (() => {
       for (const [name, boneName] of [["sword", "mixamorigRightHand"], ["shield", "mixamorigLeftForeArm"]]) {
         const src = armsSrc.scene.getObjectByName(name), bone = char.getObjectByName(boneName);
         if (!src || !bone) continue;
+        if (cfg.halberd && name === "sword") continue;
         const prop = src.clone(true);
         prop.position.set(0, 0, 0); prop.rotation.set(0, 0, 0); prop.scale.setScalar(k);
         if (name === "shield") {
@@ -1078,6 +1156,15 @@ const Pieces3D = (() => {
           prop.position.copy(c).multiplyScalar(1 - grow);           // grow about its own centre
           const out = new THREE.Vector3().setComponent(thin, Math.sign(c.getComponent(thin)) || 1);
           prop.position.addScaledVector(out, (cfg.shieldOut || 0) * k);
+          if (cfg.halberd) {
+            // a buckler strapped to the forearm, where the big shield's centre was
+            const b = makeBuckler();
+            b.scale.setScalar(k);
+            b.position.copy(c).addScaledVector(out, (cfg.shieldOut || 0) * k);
+            b.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), out);
+            bone.add(b);
+            continue;
+          }
         }
         prop.traverse(o => {
           if (!o.isMesh) return;
@@ -1144,6 +1231,7 @@ const Pieces3D = (() => {
     if (cfg.efreet) makeEfreet(g, char, cfg.h);
     if (cfg.seraph) makeSeraph(g, char, hipLen, cfg.h);
     if (cfg.archmage) makeArchmage(g, char, hipLen, cfg.h);
+    if (cfg.halberd) makeHalberdier(g, char);
     if (type === "k") { makeKing(g, char, color, cfg.h); return g; }
     // faction base, so the two armies read at a glance
     const P = palette(color);
