@@ -1,1 +1,4 @@
 .DS_Store
+# Mixamo originals and converted characters stay local until hosting is decided
+mixamo-raw/
+assets/models/mx/

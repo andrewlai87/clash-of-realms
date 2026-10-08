@@ -392,7 +392,17 @@ const Pieces3D = (() => {
         console.warn("model load failed:", url, err);
         res(false);
       }));
+    const quiet = (url, cb) => new Promise(res =>
+      loader.load(url, g => { cb(g); res(true); }, undefined, () => res(false)));
     const jobs = [
+      ...Object.entries(MX_FILES).map(([n, u]) => quiet(u, g => { MX[n] = g; })),
+      ...Object.entries(MX_ANIMS).map(([n, u]) => quiet(u, g => {
+        const clip = g.animations[0];
+        if (!clip) return;
+        clip.name = n;
+        const hips = g.scene.getObjectByName(HIPS);
+        MX_SRC[n] = { clip, rest: hips ? hips.position.toArray() : [0, 1, 0] };
+      })),
       ...Object.entries(CHAR_FILES).map(([n, u]) => one(u, g => { MODELS[n] = g; })),
       ...Object.entries(WEAPON_FILES).map(([n, u]) => one(u, g => { WEAPONS[n] = g.scene; })),
     ];
@@ -454,13 +464,19 @@ const Pieces3D = (() => {
         slot.add(w);
       }
     }
+    return rigUp(char, src.animations, type, color, cfg.scale, cfg.attack, 1.9 * cfg.scale);
+  }
+
+  // wrap a rigged character with a mixer and the play/playOnce helpers the
+  // board and battle code drive
+  function rigUp(char, clips, type, color, scale, attack, height) {
     const g = new THREE.Group();
-    char.scale.setScalar(cfg.scale);
-    char.rotation.y = Math.PI;   // KayKit models face +z; our forward is -z
+    char.scale.setScalar(scale);
+    char.rotation.y = Math.PI;   // glTF characters face +z; our forward is -z
     g.add(char);
     const mixer = new THREE.AnimationMixer(char);
     const actions = {};
-    for (const clip of src.animations) actions[clip.name] = mixer.clipAction(clip);
+    for (const clip of clips) actions[clip.name] = mixer.clipAction(clip);
     let current = null;
     const play = (name, fade = 0.25) => {
       const a = actions[name];
@@ -499,19 +515,161 @@ const Pieces3D = (() => {
     mixer.update(Math.random() * 2);
     g.userData = {
       type, color, skinned: true, mixer, actions, play, playOnce,
-      attack: cfg.attack,
-      height: 1.9 * cfg.scale,
+      attack,
+      height,
       parts: null,
     };
     if (color === "b") g.rotation.y = Math.PI;
     return g;
   }
 
-  function build(type, color) {
-    if (modelsReady && type !== "r") {
-      const g = buildSkinned(type, color);
-      if (g) return g;
+  // ================= realistic characters (Mixamo trial) =================
+  // Optional: used only for the roles listed in MX_ROLE, and only when the
+  // converted files are present; otherwise the KayKit role is used.
+
+  const MX = {};          // model name -> gltf
+  const MX_SRC = {};      // clip name -> { clip, hipY }
+  const MX_NAMES = ["paladin", "maria", "ganfaul", "knight", "uriel", "castleguard",
+    "warrok", "nightshade", "maw", "vampire", "mutant", "skeletonzombie"];
+  const MX_FILES = {};
+  for (const n of MX_NAMES) MX_FILES[n] = "assets/models/mx/" + n + ".glb";
+  // game clip name -> animation file (missing ones are simply skipped)
+  const MX_ANIMS = {
+    Slash: "assets/models/mx/anim_slash.glb",
+    Idle: "assets/models/mx/anim_idle.glb",
+    Walking_A: "assets/models/mx/anim_walk.glb",
+    Running_A: "assets/models/mx/anim_run.glb",
+    Hit_A: "assets/models/mx/anim_hit.glb",
+    Death_A: "assets/models/mx/anim_death.glb",
+    Cheer: "assets/models/mx/anim_victory.glb",
+    Spellcast_Shoot: "assets/models/mx/anim_cast.glb",
+    Jump_Full_Long: "assets/models/mx/anim_jump.glb",
+  };
+  // locomotion clips carry forward root motion; the board moves the piece
+  // itself, so these are pinned in place
+  const MX_IN_PLACE = new Set(["Walking_A", "Running_A", "Jump_Full_Long"]);
+  // h = standing height on the board (a tile is 1 unit wide)
+  const MX_ROLE = {
+    w: {
+      k: { model: "paladin", h: 1.42, crown: true, metal: 0.85, rough: 0.42, tint: 2.2 },
+      q: { model: "maria", h: 1.32, crown: true },
+      b: { model: "ganfaul", h: 1.25, prop: "staff" },
+      n: { model: "knight", h: 1.25, prop: "sword" },
+      r: { model: "uriel", h: 1.3, metal: 0.8, rough: 0.4, prop: "sword" },
+      p: { model: "castleguard", h: 0.98, prop: "sword" },
+    },
+    b: {
+      k: { model: "warrok", h: 1.42, crown: true },
+      q: { model: "nightshade", h: 1.32, crown: true },
+      b: { model: "maw", h: 1.27 },
+      n: { model: "vampire", h: 1.25 },
+      r: { model: "mutant", h: 1.34 },
+      p: { model: "skeletonzombie", h: 1.05 },
+    },
+  };
+  // the hips rest along one axis of their parent; its length is our size gauge
+  const upAxis = v => [0, 1, 2].reduce((m, k) => (Math.abs(v[k]) > Math.abs(v[m]) ? k : m), 0);
+  const HIPS = "mixamorigHips";
+
+  // Mixamo clips are authored for one character's proportions: keep the
+  // rotations, drop bone offsets, and rescale the hip travel to fit.
+  function retarget(src, char) {
+    const hips = char.getObjectByName(HIPS);
+    const up = upAxis(src.rest);
+    const ratio = hips && src.rest[up] ? hips.position.getComponent(up) / src.rest[up] : 1;
+    const tracks = [];
+    for (const t of src.clip.tracks) {
+      const dot = t.name.lastIndexOf(".");
+      const node = t.name.slice(0, dot), prop = t.name.slice(dot + 1);
+      if (!char.getObjectByName(node)) continue;
+      if (prop === "quaternion") tracks.push(t);
+      else if (prop === "position" && node === HIPS) {
+        const c = t.clone(), v = c.values;
+        if (MX_IN_PLACE.has(src.clip.name)) {
+          // keep only the vertical bob (the axis the hips rest along)
+          for (let i = 0; i < v.length; i++) if (i % 3 !== up) v[i] = v[i % 3];
+        }
+        for (let i = 0; i < v.length; i++) v[i] *= ratio;
+        tracks.push(c);
+      }
     }
+    return new THREE.AnimationClip(src.clip.name, src.clip.duration, tracks);
+  }
+
+  // simple hand props for characters that ship empty-handed (sizes in the
+  // rig's own centimetre space; the grip runs along the prop's Y axis)
+  function makeProp(kind, color) {
+    const P = palette(color), g = new THREE.Group();
+    if (kind === "sword") {
+      add(g, cyl(1.5, 1.5, 15, 8), mat(0x3a2a1c), 0, 0, 0);
+      add(g, sph(2.4, 8), goldMat(P.trim), 0, -8.5, 0);
+      add(g, box(20, 2.4, 3.4), goldMat(P.trim), 0, 8.5, 0);
+      add(g, box(4.6, 72, 1.1), steelMat(0xd6dbe6), 0, 45.5, 0);
+      const tip = add(g, cone(2.4, 8, 4), steelMat(0xd6dbe6), 0, 85.5, 0);
+      tip.scale.z = 0.3;
+      tip.rotation.y = Math.PI / 4;
+    } else {
+      add(g, cyl(1.7, 2.0, 165, 8), mat(WOOD), 0, 30, 0);
+      add(g, cyl(3.2, 4.2, 6, 8), goldMat(P.trim), 0, 113, 0);
+      add(g, sph(6.5, 10), glowMat(P.glow), 0, 121, 0);
+    }
+    return g;
+  }
+
+  function buildMixamo(type, color) {
+    const cfg = MX_ROLE[color] && MX_ROLE[color][type];
+    if (!cfg || !MX[cfg.model] || !MX_SRC.Slash) return null;
+    const char = THREE.SkeletonUtils.clone(MX[cfg.model].scene);
+    char.traverse(o => {
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+        o.frustumCulled = false;
+        o.material = o.material.clone();
+        if (cfg.metal != null) { o.material.metalness = cfg.metal; o.material.roughness = cfg.rough; }
+        // lift the Ivory army's albedo so the sides read apart even in silhouette
+        o.material.color.multiplyScalar(cfg.tint ?? (color === "w" ? 1.45 : 0.95));
+      }
+    });
+    // size every model to its role, whatever its native proportions
+    const hips = char.getObjectByName(HIPS);
+    const hipLen = hips ? Math.abs(hips.position.getComponent(upAxis(hips.position.toArray()))) : 100;
+    const scale = cfg.h / (hipLen * 0.0185);
+    if (cfg.prop) {
+      const hand = char.getObjectByName("mixamorigRightHand");
+      if (hand) {
+        const prop = makeProp(cfg.prop, color);
+        prop.position.set(0, 9, 2);
+        prop.rotation.x = -Math.PI / 2;      // blade up out of the fist
+        hand.add(prop);
+      }
+    }
+    if (cfg.crown) {
+      const head = char.getObjectByName("mixamorigHead");
+      if (head) {
+        const crown = makeCrown(color, type === "k");
+        crown.scale.setScalar(hipLen * 0.72);
+        crown.position.y = hipLen * 0.2;
+        head.add(crown);
+      }
+    }
+    const clips = Object.values(MX_SRC).map(src => retarget(src, char));
+    if (!MX_SRC.Idle) {
+      // no idle downloaded yet: hold the guard stance the slash starts from
+      const slash = clips.find(c => c.name === "Slash");
+      clips.push(THREE.AnimationUtils.subclip(slash, "Idle", 0, 2, 30));
+    }
+    const g = rigUp(char, clips, type, color, scale, "Slash", cfg.h);
+    // faction base, so the two armies read at a glance
+    const P = palette(color);
+    add(g, cyl(0.31, 0.34, 0.035, 28), mat(color === "w" ? 0xf2ecdc : 0x1d1a22, { roughness: 0.4 }), 0, 0.018, 0);
+    add(g, cyl(0.325, 0.325, 0.012, 28), goldMat(color === "w" ? P.trim : 0x9a2f3c), 0, 0.04, 0);
+    return g;
+  }
+
+  function build(type, color) {
+    const g = buildMixamo(type, color) || (type !== "r" && modelsReady && buildSkinned(type, color));
+    if (g) return g;
     return buildProcedural(type, color);
   }
 

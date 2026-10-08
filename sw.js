@@ -6,7 +6,7 @@
  * cache-first for the big immutable assets (models, vendor libs, icons).
  * Bump VERSION whenever cached assets must be invalidated.
  */
-const VERSION = "cor-v2";
+const VERSION = "cor-v3";
 
 const CODE = [
   ".",
@@ -85,8 +85,10 @@ self.addEventListener("fetch", e => {
     // cache-first: these are big and effectively immutable
     e.respondWith(
       caches.match(req).then(hit => hit || fetch(req).then(resp => {
-        const copy = resp.clone();
-        caches.open(VERSION).then(c => c.put(req, copy));
+        if (resp.ok) {            // never cache a 404 or server error
+          const copy = resp.clone();
+          caches.open(VERSION).then(c => c.put(req, copy));
+        }
         return resp;
       }))
     );
@@ -94,8 +96,10 @@ self.addEventListener("fetch", e => {
     // network-first: pick up code changes when online, fall back offline
     e.respondWith(
       fetch(req).then(resp => {
-        const copy = resp.clone();
-        caches.open(VERSION).then(c => c.put(req, copy));
+        if (resp.ok) {            // never cache a 404 or server error
+          const copy = resp.clone();
+          caches.open(VERSION).then(c => c.put(req, copy));
+        }
         return resp;
       }).catch(() => caches.match(req, { ignoreSearch: true }))
     );

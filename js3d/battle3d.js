@@ -197,7 +197,7 @@ const Battle3D = (() => {
 
   async function death(def) {
     Sound.death();
-    if (def.userData.skinned) {
+    if (def.userData.skinned && def.userData.actions.Death_A) {
       await clip(def, "Death_A");
       await pause(220);
       Board3D.spawnBurst(def.position.clone().add(new THREE.Vector3(0, 0.2, 0)),
@@ -285,7 +285,7 @@ const Battle3D = (() => {
 
     const glowColor = Pieces3D.palette(attackerPiece[0]).glow;
     if (type === "b" || type === "q") await magicStrike(atk, def, dir, glowColor);
-    else if (type === "r") await golemStrike(atk, def, dir, glowColor);
+    else if (type === "r" && !atk.userData.skinned) await golemStrike(atk, def, dir, glowColor);
     else await meleeStrike(atk, def, dir, glowColor);
 
     await death(def);
