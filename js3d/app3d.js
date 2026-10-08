@@ -251,6 +251,9 @@
   $("toggle-battles").addEventListener("change", e => { state.battles = e.target.checked; });
   $("toggle-sound").addEventListener("change", e => { Sound.setMuted(!e.target.checked); });
   $("toggle-sound").checked = !Sound.muted;
+  $("toggle-gfx").checked = Gfx3D.rich;
+  $("toggle-gfx").disabled = !Gfx3D.supported;
+  $("toggle-gfx").addEventListener("change", e => { e.target.checked = Board3D.setRichGraphics(e.target.checked); });
 
   // Debug hooks (used by dev tooling; harmless in production)
   window.debugState = () => ({ turn: game.turn, busy: state.busy, over: state.over });

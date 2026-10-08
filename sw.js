@@ -6,7 +6,7 @@
  * cache-first for the big immutable assets (models, vendor libs, icons).
  * Bump VERSION whenever cached assets must be invalidated.
  */
-const VERSION = "cor-v1";
+const VERSION = "cor-v2";
 
 const CODE = [
   ".",
@@ -18,6 +18,7 @@ const CODE = [
   "js/sound.js",
   "js/ai.js",
   "js3d/tween3d.js",
+  "js3d/gfx3d.js",
   "js3d/pieces3d.js",
   "js3d/board3d.js",
   "js3d/battle3d.js",
@@ -28,6 +29,19 @@ const ASSETS = [
   "js3d/vendor/three.min.js",
   "js3d/vendor/GLTFLoader.js",
   "js3d/vendor/SkeletonUtils.js",
+  "js3d/vendor/Pass.js",
+  "js3d/vendor/CopyShader.js",
+  "js3d/vendor/LuminosityHighPassShader.js",
+  "js3d/vendor/UnrealBloomPass.js",
+  "assets/textures/oak_veneer_01_diff.jpg",
+  "assets/textures/oak_veneer_01_nor_gl.jpg",
+  "assets/textures/oak_veneer_01_arm.jpg",
+  "assets/textures/dark_wood_diff.jpg",
+  "assets/textures/dark_wood_nor_gl.jpg",
+  "assets/textures/dark_wood_arm.jpg",
+  "assets/textures/monastery_stone_floor_diff.jpg",
+  "assets/textures/monastery_stone_floor_nor_gl.jpg",
+  "assets/textures/monastery_stone_floor_arm.jpg",
   "assets/icons/icon-180.png",
   "assets/icons/icon-192.png",
   "assets/icons/icon-512.png",

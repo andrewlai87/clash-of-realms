@@ -50,7 +50,7 @@ const Board3D = (() => {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
+    renderer.toneMappingExposure = 1.25;
     container.appendChild(renderer.domElement);
 
     scene = new THREE.Scene();
@@ -59,14 +59,15 @@ const Board3D = (() => {
 
     camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
 
-    buildLights();
-    buildBoard();
-    buildSurroundings();
-
     piecesGroup = new THREE.Group();
     markerGroup = new THREE.Group();
     statusGroup = new THREE.Group();
     scene.add(piecesGroup, markerGroup, statusGroup);
+
+    Gfx3D.init(renderer, scene, camera, { hideInDepth: [markerGroup, statusGroup] });
+    buildLights();
+    buildBoard();
+    buildSurroundings();
 
     bindInput();
     resize();
@@ -74,6 +75,7 @@ const Board3D = (() => {
 
     let last = performance.now();
     let lastFrameAt = 0;
+    let dof = 0;                // battle close-ups ease into depth of field
     const safeFrame = () => {
       try {
         lastFrameAt = performance.now();
@@ -118,7 +120,8 @@ const Board3D = (() => {
         scene.position.set(0, 0, 0);
         shakeAmp = 0;
       }
-      renderer.render(scene, camera);
+      dof += ((cinematic ? 1 : 0) - dof) * Math.min(1, dt * 5);
+      Gfx3D.render(dof, camera.position.distanceTo(lookTarget));
     }
   }
 
@@ -127,41 +130,49 @@ const Board3D = (() => {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
+    Gfx3D.resize(w, h);
   }
 
   function buildLights() {
-    scene.add(new THREE.HemisphereLight(0x9585b8, 0x241a2a, 0.55));
-    const key = new THREE.DirectionalLight(0xffe8c4, 1.35);
+    scene.add(new THREE.HemisphereLight(0x9585b8, 0x241a2a, 0.28));
+    const key = new THREE.DirectionalLight(0xffe8c4, 1.7);
     key.position.set(5, 10, 4);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     key.shadow.camera.left = -6.5; key.shadow.camera.right = 6.5;
     key.shadow.camera.top = 6.5; key.shadow.camera.bottom = -6.5;
     key.shadow.camera.near = 2; key.shadow.camera.far = 26;
-    key.shadow.bias = -0.002;
+    key.shadow.bias = -0.0015;
+    key.shadow.normalBias = 0.02;
     scene.add(key);
-    const fill = new THREE.DirectionalLight(0x6f5fd0, 0.35);
+    const fill = new THREE.DirectionalLight(0x9aa0d8, 0.2);
     fill.position.set(-6, 5, -5);
     scene.add(fill);
   }
 
+  // deterministic per-tile variation (so the board looks the same every load)
+  const hash = n => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+
   function buildBoard() {
-    const matLight = new THREE.MeshStandardMaterial({ color: 0xdcc79c, roughness: 0.75 });
-    const matDark = new THREE.MeshStandardMaterial({ color: 0x8a6238, roughness: 0.75 });
+    // oak and mahogany squares, each cut from a different patch of the plank
+    const matLight = Gfx3D.pbr("oak_veneer_01", { color: 0xf2dfc0, roughness: 0.55, normal: 0.6 });
+    const matDark = Gfx3D.pbr("dark_wood", { color: 0xa98672, roughness: 0.62, normal: 0.6, env: 0.7 });
     const tileGeo = new THREE.BoxGeometry(0.98, 0.14, 0.98);
     for (let i = 0; i < 64; i++) {
       const r = i >> 3, c = i & 7;
-      const t = new THREE.Mesh(tileGeo, ((r + c) & 1) === 0 ? matLight : matDark);
+      const light = ((r + c) & 1) === 0;
+      const geo = Gfx3D.remapUV(tileGeo.clone(), 0.22, 0.22, hash(i) * 0.78, hash(i + 64) * 0.78, !light);
+      const t = new THREE.Mesh(geo, light ? matLight : matDark);
       t.position.set(worldX(i), -0.07, worldZ(i));
       t.receiveShadow = true;
       t.userData.sq = i;
       tiles.push(t);
       scene.add(t);
     }
-    // wooden frame
-    const wood = new THREE.MeshStandardMaterial({ color: 0x452f1d, roughness: 0.7 });
-    const frameLong = new THREE.BoxGeometry(9.2, 0.22, 0.6);
-    const frameSide = new THREE.BoxGeometry(0.6, 0.22, 8.0);
+    // wooden frame, grain running along each rail
+    const wood = Gfx3D.pbr("dark_wood", { color: 0x6b4a3a, roughness: 0.72, normal: 0.8, env: 0.6 });
+    const frameLong = Gfx3D.remapUV(new THREE.BoxGeometry(9.2, 0.22, 0.6), 2.4, 0.16);
+    const frameSide = Gfx3D.remapUV(new THREE.BoxGeometry(0.6, 0.22, 8.0), 2.1, 0.16, 0.3, 0.5, true);
     for (const [g, x, z] of [[frameLong, 0, 4.3], [frameLong, 0, -4.3], [frameSide, 4.3, 0], [frameSide, -4.3, 0]]) {
       const m = new THREE.Mesh(g, wood);
       m.position.set(x, -0.05, z);
@@ -169,12 +180,14 @@ const Board3D = (() => {
       m.castShadow = true;
       scene.add(m);
     }
-    const plinthGeo = new THREE.BoxGeometry(9.6, 0.3, 9.6);
-    const plinth = new THREE.Mesh(plinthGeo, new THREE.MeshStandardMaterial({ color: 0x2c1d10, roughness: 0.8 }));
+    const plinthGeo = Gfx3D.remapUV(new THREE.BoxGeometry(9.6, 0.3, 9.6), 2.5, 2.5);
+    const plinth = new THREE.Mesh(plinthGeo, Gfx3D.pbr("dark_wood", { color: 0x3e2a20, roughness: 0.85, env: 0.5 }));
     plinth.position.y = -0.31;
+    plinth.castShadow = true;
+    plinth.receiveShadow = true;
     scene.add(plinth);
     // gold trim strips on frame top
-    const trimMat = new THREE.MeshStandardMaterial({ color: 0xc9a04e, roughness: 0.35, metalness: 0.7 });
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0xc9a04e, roughness: 0.28, metalness: 1 });
     const trimGeoL = new THREE.BoxGeometry(8.2, 0.03, 0.05);
     const trimGeoS = new THREE.BoxGeometry(0.05, 0.03, 8.2);
     for (const [g, x, z] of [[trimGeoL, 0, 4.06], [trimGeoL, 0, -4.06], [trimGeoS, 4.06, 0], [trimGeoS, -4.06, 0]]) {
@@ -185,9 +198,10 @@ const Board3D = (() => {
   }
 
   function buildSurroundings() {
+    // flagstone floor of the hall
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(80, 80),
-      new THREE.MeshStandardMaterial({ color: 0x181223, roughness: 0.95 })
+      Gfx3D.remapUV(new THREE.PlaneGeometry(80, 80), 18, 18),
+      Gfx3D.pbr("monastery_stone_floor", { color: 0x8d86a0, roughness: 1, normal: 1.2, env: 0.6 })
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.47;
@@ -645,6 +659,7 @@ const Board3D = (() => {
     setSelection, setLastMove, setCheck,
     spawnBurst, dustRing, shake, trackAnim, untrackAnim,
     cinematicTo, cinematicRestore, flipCamera, setHome, onSkip,
+    setRichGraphics: on => Gfx3D.setRich(on),
     worldX, worldZ, factionYaw, yawFor,
     get camera() { return camera; },
     get scene() { return scene; },
