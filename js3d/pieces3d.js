@@ -397,6 +397,7 @@ const Pieces3D = (() => {
     const jobs = [
       ...Object.entries(MX_FILES).map(([n, u]) => quiet(u, g => { MX[n] = g; })),
       quiet(MOUNT_FILE, g => { mountSrc = g; }),
+      quiet("assets/models/mx/props.glb", g => { armsSrc = g; }),
       quiet(MAGE_FILE, g => { mageSrc = g; }),
       quiet(WINGS_FILE, g => { prepWings(g); }),
       quiet(NYX_FILE, g => { nyxSrc = g; }),
@@ -533,6 +534,7 @@ const Pieces3D = (() => {
   // converted files are present; otherwise the KayKit role is used.
 
   const MX = {};          // model name -> gltf
+  let armsSrc = null;     // sword + shield props (assets/models/mx/props.glb)
   const MX_SRC = {};      // clip name -> { clip, hipY }
   const MX_NAMES = ["paladin", "maria", "ganfaul", "knight", "uriel", "castleguard",
     "warrok", "nightshade", "maw", "vampire", "mutant", "skeletonzombie"];
@@ -561,7 +563,7 @@ const Pieces3D = (() => {
       b: { model: "ganfaul", h: 1.25, prop: "staff" },
       n: { model: "knight", h: 1.25, prop: "sword" },
       r: { model: "uriel", h: 1.3, metal: 0.8, rough: 0.4, prop: "sword" },
-      p: { model: "castleguard", h: 0.98, prop: "sword" },
+      p: { model: "castleguard", h: 0.98, arms: true },
     },
     b: {
       k: { model: "vampire", h: 1.4, crown: true, crownY: 0.1 },
@@ -569,7 +571,7 @@ const Pieces3D = (() => {
       b: { model: "maw", h: 1.27, efreet: true },
       n: { model: "vampire", h: 1.25 },
       r: { model: "mutant", h: 1.34 },
-      p: { model: "skeletonzombie", h: 1.05 },
+      p: { model: "skeletonzombie", h: 1.05, arms: "rusted" },
     },
   };
   // the hips rest along one axis of their parent; its length is our size gauge
@@ -723,6 +725,27 @@ const Pieces3D = (() => {
     const hips = char.getObjectByName(HIPS);
     const hipLen = hips ? Math.abs(hips.position.getComponent(upAxis(hips.position.toArray()))) : 100;
     const scale = cfg.h / (hipLen * 0.0185);
+    if (cfg.arms && armsSrc) {
+      // the Paladin's own sword and shield, carried on the same bones he uses
+      const k = hipLen / 95.6;                 // sized to this character
+      for (const [name, boneName] of [["sword", "mixamorigRightHand"], ["shield", "mixamorigLeftForeArm"]]) {
+        const src = armsSrc.scene.getObjectByName(name), bone = char.getObjectByName(boneName);
+        if (!src || !bone) continue;
+        const prop = src.clone(true);
+        prop.position.set(0, 0, 0); prop.rotation.set(0, 0, 0); prop.scale.setScalar(k);
+        prop.traverse(o => {
+          if (!o.isMesh) return;
+          o.castShadow = true;
+          o.material = o.material.clone();
+          if (cfg.arms === "rusted") {
+            o.material.color.setRGB(0.5, 0.36, 0.3);
+            o.material.metalness = 0.35;
+            o.material.roughness = 0.85;
+          } else { o.material.metalness = 0.8; o.material.roughness = 0.4; o.material.color.multiplyScalar(1.5); }
+        });
+        bone.add(prop);
+      }
+    }
     if (cfg.prop) {
       const hand = char.getObjectByName("mixamorigRightHand");
       if (hand) {
