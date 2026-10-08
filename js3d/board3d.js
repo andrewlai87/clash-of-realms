@@ -403,8 +403,75 @@ const Board3D = (() => {
     if (parts.armL) parts.armL.rotation.set(0, 0, 0);
   }
 
+  // a jagged bolt between the sky and a square, flickering a few times
+  async function skyBolt(x, z, hex, times = 4) {
+    const core = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffffff).multiplyScalar(5), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+    const halo = new THREE.MeshBasicMaterial({ color: new THREE.Color(hex).multiplyScalar(2.4), transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false });
+    const geo = new THREE.CylinderGeometry(1, 1, 1, 5, 1, true), up = new THREE.Vector3(0, 1, 0);
+    for (let n = 0; n < times; n++) {
+      const bolt = new THREE.Group();
+      const pts = [];
+      for (let i = 0; i <= 12; i++) {
+        const y = 7 * (1 - i / 12), j = i === 12 ? 0 : 0.28;
+        pts.push(new THREE.Vector3(x + (Math.random() - 0.5) * j * (1 + y * 0.25), y, z + (Math.random() - 0.5) * j * (1 + y * 0.25)));
+      }
+      for (let i = 0; i < 12; i++) {
+        const d = pts[i + 1].clone().sub(pts[i]), len = d.length();
+        for (const [mat, w] of [[core, 0.022], [halo, 0.07]]) {
+          const m = new THREE.Mesh(geo, mat);
+          m.position.copy(pts[i]).addScaledVector(d, 0.5);
+          m.quaternion.setFromUnitVectors(up, d.clone().normalize());
+          m.scale.set(w, len, w);
+          bolt.add(m);
+        }
+      }
+      scene.add(bolt);
+      await Tween.wait(45);
+      scene.remove(bolt);
+    }
+    core.dispose(); halo.dispose();
+  }
+
+  function flashAt(pos, hex, intensity = 8, ms = 420) {
+    const l = new THREE.PointLight(hex, intensity, 7);
+    l.position.set(pos.x, 0.9, pos.z);
+    scene.add(l);
+    const s = { i: intensity };
+    Tween.to(s, { i: 0 }, { duration: ms, easing: "out", onUpdate: () => { l.intensity = s.i; } }).then(() => scene.remove(l));
+  }
+
+  // dissolve upward into a bolt, then strike down onto the target square
+  async function lightningTeleport(g, tx, tz) {
+    const hex = g.userData.flameColor || 0x7fc8ff;
+    const from = g.position.clone(), to = new THREE.Vector3(tx, 0, tz);
+    Sound.zap();
+    flashAt(from, hex);
+    spawnBurst(from.clone().setY(0.6), 0xd8eeff, 16, 2.8);
+    await Promise.all([
+      Tween.to(g.scale, { x: 0.02, y: 2.2, z: 0.02 }, { duration: 170, easing: "in" }),
+      skyBolt(from.x, from.z, hex, 3),
+    ]);
+    g.visible = false;
+    await Tween.wait(90);
+    g.position.set(tx, 0, tz);
+    Sound.zap();
+    Sound.boom();
+    flashAt(to, hex, 11, 520);
+    shake(0.08);
+    dustRing(to, hex);
+    spawnBurst(to.clone().setY(0.5), 0xd8eeff, 22, 3.2);
+    g.scale.set(0.02, 2.2, 0.02);
+    g.visible = true;
+    await Promise.all([
+      skyBolt(tx, tz, hex, 4),
+      Tween.to(g.scale, { x: 1, y: 1, z: 1 }, { duration: 230, easing: "outBack" }),
+    ]);
+    g.scale.set(1, 1, 1);
+  }
+
   // vanish in a burst of flame, streak to the target, and reappear there
   async function teleportToPos(g, tx, tz) {
+    if (g.userData.teleportStyle === "lightning") return lightningTeleport(g, tx, tz);
     const hex = g.userData.flameColor || 0xff6a1a;
     const from = g.position.clone(), to = new THREE.Vector3(tx, 0, tz);
     const mid = h => new THREE.Vector3(0, h, 0);

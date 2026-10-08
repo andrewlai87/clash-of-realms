@@ -560,7 +560,7 @@ const Pieces3D = (() => {
     w: {
       k: { model: "paladin", h: 1.42, crown: true, metal: 0.85, rough: 0.42, tint: 2.2 },
       q: { model: "maria", h: 1.32, seraph: true },
-      b: { model: "ganfaul", h: 1.25, prop: "staff" },
+      b: { model: "ganfaul", h: 1.25, prop: "staff", archmage: true },
       n: { model: "knight", h: 1.25, prop: "sword" },
       r: { model: "uriel", h: 1.3, metal: 0.8, rough: 0.4, prop: "sword" },
       p: { model: "castleguard", h: 0.98, arms: true, shieldOut: 9 },
@@ -807,6 +807,7 @@ const Pieces3D = (() => {
     const g = rigUp(char, clips, type, color, scale, "Slash", cfg.h);
     if (cfg.efreet) makeEfreet(g, char, cfg.h);
     if (cfg.seraph) makeSeraph(g, char, hipLen, cfg.h);
+    if (cfg.archmage) makeArchmage(g, char, hipLen, cfg.h);
     // faction base, so the two armies read at a glance
     const P = palette(color);
     add(g, cyl(0.31, 0.34, 0.035, 28), mat(color === "w" ? 0xf2ecdc : 0x1d1a22, { roughness: 0.4 }), 0, 0.018, 0);
@@ -985,6 +986,69 @@ const Pieces3D = (() => {
     w.getObjectByName("wingL").rotation.y = a;
     w.getObjectByName("wingR").rotation.y = -a;
   };
+
+  // Ivory's bishop: an archmage of light. He hovers inside a turning ring of
+  // runes with crystals in orbit, his staff blazes, and he travels as a
+  // bolt of lightning instead of walking.
+  function makeArchmage(g, char, hipLen, h) {
+    const hex = 0x7fc8ff, lift = 0.14;
+    const glow = (k, op) => new THREE.MeshBasicMaterial({
+      color: new THREE.Color(hex).multiplyScalar(k), transparent: true, opacity: op,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    });
+    // rune circle on the ground: two rings and a band of glyph marks
+    const circle = new THREE.Group();
+    circle.rotation.x = -Math.PI / 2;
+    circle.position.y = 0.066;
+    circle.add(new THREE.Mesh(new THREE.RingGeometry(0.4, 0.425, 48), glow(2.2, 0.9)));
+    circle.add(new THREE.Mesh(new THREE.RingGeometry(0.27, 0.285, 40), glow(2.2, 0.8)));
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(i % 3 ? 0.035 : 0.06, 0.085), glow(2.6, 0.9));
+      m.position.set(Math.cos(a) * 0.343, Math.sin(a) * 0.343, 0);
+      m.rotation.z = a + Math.PI / 2 + (i % 2 ? 0.5 : -0.3);
+      circle.add(m);
+    }
+    g.add(circle);
+    // crystals orbiting at chest height
+    const crystals = [];
+    for (let i = 0; i < 4; i++) {
+      const c = new THREE.Mesh(new THREE.OctahedronGeometry(0.05), glow(3.2, 0.95));
+      c.scale.y = 1.8;
+      g.add(c);
+      crystals.push(c);
+    }
+    // the staff head burns with light
+    const hand = char.getObjectByName("mixamorigRightHand");
+    let flare = null;
+    if (hand) {
+      flare = new THREE.Mesh(new THREE.IcosahedronGeometry(11, 1), glow(3.5, 0.7));
+      flare.position.set(0, 9, 2);
+      const tip = new THREE.Group();
+      tip.rotation.x = -Math.PI / 2;
+      tip.position.set(0, 9, 2);
+      flare.position.set(0, 121, 0);
+      tip.add(flare);
+      hand.add(tip);
+    }
+    g.userData.teleport = true;
+    g.userData.teleportStyle = "lightning";
+    g.userData.flameColor = hex;
+    const prev = g.userData.animate;
+    g.userData.animate = t => {
+      if (prev) prev(t);
+      const s = t * 0.001;
+      char.position.y = lift + Math.sin(s * 1.8) * 0.03;
+      circle.rotation.z = s * 0.5;
+      circle.children.forEach((m, i) => { m.material.opacity = 0.65 + Math.sin(s * 3 + i) * 0.25; });
+      crystals.forEach((c, i) => {
+        const a = s * 1.1 + (i / crystals.length) * Math.PI * 2;
+        c.position.set(Math.cos(a) * 0.36, h * 0.55 + Math.sin(s * 2 + i * 1.7) * 0.1, Math.sin(a) * 0.36);
+        c.rotation.y = s * 2 + i;
+      });
+      if (flare) flare.scale.setScalar(0.85 + Math.sin(s * 8) * 0.18);
+    };
+  }
 
   // Ivory: the animated queen becomes a seraph (wings and halo ride her bones)
   function makeSeraph(g, char, hipLen, h) {
