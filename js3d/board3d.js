@@ -415,6 +415,15 @@ const Board3D = (() => {
       onUpdate: () => {
         g.position.x = fx + (tx - fx) * s.t;
         g.position.z = fz + (tz - fz) * s.t;
+        if (g.userData.heavy) {
+          // lumbering stride: sway side to side and shake the board on each footfall
+          const w = s.t * Math.PI * cycles;
+          g.position.y = Math.abs(Math.sin(w)) * 0.06;
+          g.rotation.z = Math.sin(w) * 0.07;
+          const step = Math.floor(s.t * cycles);
+          if (step !== g.userData._step) { g.userData._step = step; if (step > 0) { shake(0.05); Sound.thud(); } }
+          return;
+        }
         if (skinned) return;
         const env = Math.sin(Math.PI * Math.min(1, s.t * 1.15));
         if (glide) {
@@ -428,6 +437,7 @@ const Board3D = (() => {
       },
     }).then(() => {
       g.position.y = 0;
+      if (g.userData.heavy) { g.rotation.z = 0; g.userData._step = 0; shake(0.06); }
       if (skinned) g.userData.play("Idle", 0.15);
       else resetPose(g);
     });

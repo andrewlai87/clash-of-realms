@@ -397,6 +397,7 @@ const Pieces3D = (() => {
     const jobs = [
       ...Object.entries(MX_FILES).map(([n, u]) => quiet(u, g => { MX[n] = g; })),
       quiet(MOUNT_FILE, g => { mountSrc = g; }),
+      ...Object.entries(HEAVY).map(([c, cfg]) => quiet(cfg.file, g => { heavySrc[c] = g; })),
       ...Object.entries(MX_ANIMS).map(([n, u]) => quiet(u, g => {
         const clip = g.animations[0];
         if (!clip) return;
@@ -695,7 +696,7 @@ const Pieces3D = (() => {
   }
 
   // bleach a colour texture to ivory, keeping the golden belly plates
-  function paleTexture(tex) {
+  function paleTexture(tex, gain = 1.55, lift = 38) {
     const img = tex.image;
     const c = document.createElement("canvas");
     c.width = img.width; c.height = img.height;
@@ -706,7 +707,7 @@ const Pieces3D = (() => {
       const r = px[i], g = px[i + 1], b = px[i + 2];
       if (r > 150 && g > 105 && g > b * 1.7) continue;          // gold stays gold
       const l = 0.3 * r + 0.59 * g + 0.11 * b;
-      const k = Math.min(255, l * 1.55 + 38);
+      const k = Math.min(255, l * gain + lift);
       px[i] = k * 0.98 + r * 0.04; px[i + 1] = k * 0.95 + g * 0.03; px[i + 2] = k * 0.9 + b * 0.03;
     }
     ctx.putImageData(d, 0, 0);
@@ -766,8 +767,44 @@ const Pieces3D = (() => {
     return g;
   }
 
+  // ================= colossi: the rooks =================
+  // Obsidian fields a molten rock golem, Ivory an ancient tree giant.
+  // Both files are pre-normalised (1 unit tall, feet at the origin).
+  const HEAVY = {
+    w: { file: "assets/models/mx/treeman.glb", h: 1.7, pale: true },
+    b: { file: "assets/models/mx/golem.glb", h: 1.4 },
+  };
+  const heavySrc = {};
+  const heavyMaps = {};
+
+  function buildHeavy(type, color) {
+    const cfg = HEAVY[color], src = heavySrc[color];
+    if (type !== "r" || !src) return null;
+    const char = THREE.SkeletonUtils.clone(src.scene);
+    char.traverse(o => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.receiveShadow = true;
+      o.frustumCulled = false;
+      o.material = o.material.clone();
+      if (cfg.pale && o.material.map && o.material.map.image) {
+        const key = o.material.map.uuid;
+        if (!heavyMaps[key]) heavyMaps[key] = paleTexture(o.material.map, 3.2, 96);   // silver birch
+        o.material.map = heavyMaps[key];
+      }
+    });
+    const idle = src.animations[0].clone();
+    idle.name = "Idle";
+    const g = rigUp(char, [idle], type, color, cfg.h, null, cfg.h * 0.9);
+    g.userData.heavy = true;
+    const P = palette(color);
+    add(g, cyl(0.36, 0.39, 0.035, 28), mat(color === "w" ? 0xf2ecdc : 0x1d1a22, { roughness: 0.4 }), 0, 0.018, 0);
+    add(g, cyl(0.375, 0.375, 0.012, 28), goldMat(color === "w" ? P.trim : 0x9a2f3c), 0, 0.04, 0);
+    return g;
+  }
+
   function build(type, color) {
-    const mount = buildMount(type, color);
+    const mount = buildMount(type, color) || buildHeavy(type, color);
     if (mount) return mount;
     const g = buildMixamo(type, color) || (type !== "r" && modelsReady && buildSkinned(type, color));
     if (g) return g;

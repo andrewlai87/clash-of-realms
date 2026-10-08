@@ -6,7 +6,7 @@
  * cache-first for the big immutable assets (models, vendor libs, icons).
  * Bump VERSION whenever cached assets must be invalidated.
  */
-const VERSION = "cor-v3";
+const VERSION = "cor-v4";
 
 const CODE = [
   ".",
@@ -74,7 +74,11 @@ self.addEventListener("activate", e => {
   );
 });
 
+const DEV = self.location.hostname === "localhost";
+
 function isAsset(url) {
+  // while developing locally, always fetch fresh so replaced models show up
+  if (DEV) return false;
   return url.includes("/assets/") || url.includes("/js3d/vendor/");
 }
 

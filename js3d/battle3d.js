@@ -32,8 +32,11 @@ const Battle3D = (() => {
     skipResolvers = [];
   }
 
+  // the 3D set's own creatures, where they differ from the classic titles
+  const CREATURES = { wr: "Ancient Treant", br: "Magma Golem", wn: "Ivory Wyvern", bn: "Obsidian Wyvern" };
+
   function fighterName(piece) {
-    return `${piece[0] === "w" ? "Ivory" : "Obsidian"} ${Pieces.TITLES[piece[1]]}`;
+    return CREATURES[piece] || `${piece[0] === "w" ? "Ivory" : "Obsidian"} ${Pieces.TITLES[piece[1]]}`;
   }
 
   function faceYaw(g, targetYaw, duration = 220) {
@@ -419,8 +422,9 @@ const Battle3D = (() => {
     ].filter(Boolean));
     Board3D.dustRing(def.position);
     Board3D.spawnBurst(hitPoint(def), 0xbea573, 18, 3);
-    Board3D.shake(0.16);
+    Board3D.shake(0.2);
     flashHit(def);
+    clip(def, "Hit_A");
     await pause(220);
     await Promise.all([
       tw(atk.position, { x: atk.position.x - dir.x * 0.25, z: atk.position.z - dir.z * 0.25 }, { duration: 280, easing: "out" }),
@@ -569,7 +573,7 @@ const Battle3D = (() => {
     const glowColor = Pieces3D.palette(attackerPiece[0]).glow;
     if (spell) await SPELL_FN[spell](atk, def, dir, SPELL_COLOR[spell]);
     else if (flyer) await swoopStrike(atk, def, dir, glowColor);
-    else if (type === "r" && !atk.userData.skinned) await golemStrike(atk, def, dir, glowColor);
+    else if (type === "r" && (!atk.userData.skinned || atk.userData.heavy)) await golemStrike(atk, def, dir, glowColor);
     else await meleeStrike(atk, def, dir, glowColor);
 
     await death(def);
