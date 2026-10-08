@@ -564,7 +564,100 @@ const Pieces3D = (() => {
     geo.computeVertexNormals();
     const outer = new THREE.MeshStandardMaterial({ color: dark ? 0x121016 : 0x7c1424, roughness: 0.9, side: THREE.FrontSide });
     const lining = new THREE.MeshStandardMaterial({ color: dark ? 0x8a1524 : 0xe9e2d2, roughness: 0.95, side: THREE.BackSide });
-    for (const m of [outer, lining]) { const sheet = new THREE.Mesh(geo, m); sheet.castShadow = true; cape.add(sheet); }
+    // The sheet is real cloth: a grid of points hung from the shoulders, pulled
+    // by gravity and pushed off his body, simulated in world space so it trails
+    // and settles on its own. Its vertices are written back in the piece's space.
+    for (const m of [outer, lining]) { const sheet = new THREE.Mesh(geo, m); sheet.castShadow = true; sheet.frustumCulled = false; g.add(sheet); }
+    const COLS = 11, ROWS = 15, N = COLS * ROWS;
+    const rest = [], P = [], Q = [];           // rest shape (cape space), position, previous position (world)
+    for (let i = 0; i < N; i++) { rest.push(new THREE.Vector3().fromBufferAttribute(pos, i)); P.push(new THREE.Vector3()); Q.push(new THREE.Vector3()); }
+    const links = [];
+    const link = (a, b) => links.push([a, b, rest[a].distanceTo(rest[b])]);
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const i = r * COLS + c;
+      if (r + 1 < ROWS) link(i, i + COLS);
+      if (c + 1 < COLS) link(i, i + 1);
+      if (r + 1 < ROWS && c + 1 < COLS) { link(i, i + COLS + 1); link(i + 1, i + COLS); }
+      if (r + 2 < ROWS) link(i, i + 2 * COLS);          // resists folding
+      if (c + 2 < COLS) link(i, i + 2);
+    }
+    const tether = rest.map((p, i) => p.distanceTo(rest[i % COLS]) * 1.03);    // never stretches past its own length
+    // his body, as capsules between joints: [from, to, radius]
+    const B = n => char.getObjectByName("mixamorig" + n);
+    const body = [
+      ["Hips", "Spine2", 0.118], ["Spine2", "Neck", 0.112], ["Neck", "Head", 0.075],
+      ["LeftUpLeg", "LeftLeg", 0.074], ["LeftLeg", "LeftFoot", 0.058], ["RightUpLeg", "RightLeg", 0.074], ["RightLeg", "RightFoot", 0.058],
+      ["LeftArm", "LeftForeArm", 0.056], ["LeftForeArm", "LeftHand", 0.05], ["RightArm", "RightForeArm", 0.056], ["RightForeArm", "RightHand", 0.05],
+    ].map(([a, b, r]) => ({ a: B(a), b: B(b), r: r * h, pa: new THREE.Vector3(), pb: new THREE.Vector3() })).filter(k => k.a && k.b);
+    // the vampire's robe hangs from his hips: the cape lies over it
+    const skirt = dark && B("Hips") ? { a: B("Hips"), r: 0.19 * h, pa: new THREE.Vector3(), pb: new THREE.Vector3() } : null;
+    const d = new THREE.Vector3(), cpt = new THREE.Vector3(), inv = new THREE.Matrix4();
+    const pushOut = (p, k) => {
+      d.subVectors(k.pb, k.pa);
+      const t = Math.max(0, Math.min(1, cpt.subVectors(p, k.pa).dot(d) / (d.lengthSq() || 1)));
+      cpt.copy(k.pa).addScaledVector(d, t);
+      d.subVectors(p, cpt);
+      const l = d.length();
+      if (l < k.r && l > 1e-5) p.addScaledVector(d, (k.r - l) / l);
+    };
+    let live = false, clock = 0;
+    const cloth = () => {
+      const now = performance.now(), dt = Math.min(1 / 30, Math.max(1 / 240, (now - clock) / 1000));
+      const jumped = now - clock > 400;
+      clock = now;
+      cape.updateMatrixWorld(true);
+      // the top edge is sewn to the shoulders
+      let far = false;
+      for (let c = 0; c < COLS; c++) {
+        d.copy(rest[c]).applyMatrix4(cape.matrixWorld);
+        if (P[c].distanceTo(d) > 0.7) far = true;
+        P[c].copy(d); Q[c].copy(d);
+      }
+      if (!live || jumped || far) {
+        // first frame, or he was just placed somewhere new: hang at rest
+        for (let i = COLS; i < N; i++) { P[i].copy(rest[i]).applyMatrix4(cape.matrixWorld); Q[i].copy(P[i]); }
+        live = true;
+      }
+      for (const k of body) { k.pa.setFromMatrixPosition(k.a.matrixWorld); k.pb.setFromMatrixPosition(k.b.matrixWorld); }
+      const floor = g.position.y + RISE + 0.03;
+      if (skirt) { skirt.pa.setFromMatrixPosition(skirt.a.matrixWorld); skirt.pb.copy(skirt.pa).setY(floor + skirt.r * 0.5); }
+      const s = now * 0.001, k2 = dt * dt;
+      for (let i = COLS; i < N; i++) {
+        const p = P[i], q = Q[i];
+        d.subVectors(p, q).multiplyScalar(0.965);
+        q.copy(p);
+        p.add(d);
+        p.y -= 11 * k2;
+        // a breath of wind keeps the hem alive
+        const v = Math.floor(i / COLS) / (ROWS - 1);
+        p.x += Math.sin(s * 1.1 + i * 0.37) * 0.25 * k2 * v;
+        p.z += Math.cos(s * 0.8 + i * 0.21) * 0.25 * k2 * v;
+      }
+      for (let it = 0; it < 6; it++) {
+        for (const [a, b, len] of links) {
+          d.subVectors(P[b], P[a]);
+          const l = d.length() || 1e-6, f = (l - len) / l * 0.5;
+          if (a >= COLS) P[a].addScaledVector(d, b >= COLS ? f : f * 2);
+          if (b >= COLS) P[b].addScaledVector(d, a >= COLS ? -f : -f * 2);
+        }
+        for (let i = COLS; i < N; i++) {
+          const p = P[i];
+          for (const k of body) pushOut(p, k);
+          if (skirt) pushOut(p, skirt);
+          if (p.y < floor) p.y = floor;
+        }
+      }
+      for (let i = COLS; i < N; i++) {
+        const pin = P[i % COLS];
+        d.subVectors(P[i], pin);
+        const l = d.length();
+        if (l > tether[i]) P[i].copy(pin).addScaledVector(d, tether[i] / l);
+      }
+      inv.copy(g.matrixWorld).invert();
+      for (let i = 0; i < N; i++) { d.copy(P[i]).applyMatrix4(inv); pos.setXYZ(i, d.x, d.y, d.z); }
+      pos.needsUpdate = true;
+      geo.computeVertexNormals();
+    };
     if (dark) {
       // a high standing collar
       const cg = new THREE.CylinderGeometry(h * 0.16, h * 0.105, h * 0.17, 20, 1, true, -Math.PI * 0.62, Math.PI * 1.24);
@@ -650,17 +743,13 @@ const Pieces3D = (() => {
       };
     }
 
-    // per frame: the cape follows the shoulders and trails when he moves
-    const prev = g.userData.animate, last = new THREE.Vector3().copy(g.position);
-    let trail = 0, yaw = 0;
+    // per frame: the mantle follows the shoulders, and the cloth hangs from it
+    const prev = g.userData.animate;
+    let yaw = 0;
     g.userData.animate = t => {
       if (prev) prev(t);
       const s = t * 0.001;
       g.userData.omen(s);
-      const speed = Math.hypot(g.position.x - last.x, g.position.z - last.z);
-      last.copy(g.position);
-      trail += (Math.min(0.5, speed * 9) - trail) * 0.12;
-      cape.rotation.x = 0.05 + trail + Math.sin(s * 1.3) * 0.02;
     };
     const post = g.userData.postAnimate;
     g.userData.postAnimate = () => {
@@ -672,7 +761,8 @@ const Pieces3D = (() => {
         yaw += Math.atan2(Math.sin(Math.atan2(b.x, b.z) - yaw), Math.cos(Math.atan2(b.x, b.z) - yaw)) * 0.25;
       }
       cape.rotation.y = yaw;
-      cape.position.set(p.x + Math.sin(yaw) * h * 0.085, p.y - h * 0.005, p.z + Math.cos(yaw) * h * 0.085);
+      cape.position.set(p.x + Math.sin(yaw) * h * 0.1, p.y - h * 0.005, p.z + Math.cos(yaw) * h * 0.1);
+      cloth();
     };
     g.userData.postAnimate();
   }
