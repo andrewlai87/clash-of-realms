@@ -370,6 +370,8 @@ const Board3D = (() => {
       g.userData.sq = move.to;
       g.position.set(worldX(move.to), 0, worldZ(move.to));
       g.rotation.set(0, factionYaw(g.userData.color), 0);
+      g.scale.set(1, 1, 1);
+      g.visible = true;
       if (g.userData.skinned) g.userData.play("Idle", 0.2);
       else resetPose(g);
     }
@@ -401,8 +403,57 @@ const Board3D = (() => {
     if (parts.armL) parts.armL.rotation.set(0, 0, 0);
   }
 
+  // vanish in a burst of flame, streak to the target, and reappear there
+  async function teleportToPos(g, tx, tz) {
+    const hex = g.userData.flameColor || 0xff6a1a;
+    const from = g.position.clone(), to = new THREE.Vector3(tx, 0, tz);
+    const mid = h => new THREE.Vector3(0, h, 0);
+    Sound.fire();
+    spawnBurst(from.clone().add(mid(0.6)), hex, 18, 2.6);
+    dustRing(from, hex);
+    await Tween.to(g.scale, { x: 0.02, y: 1.5, z: 0.02 }, { duration: 200, easing: "in" });
+    g.visible = false;
+    // a comet of fire along the path
+    const glow = k => new THREE.MeshBasicMaterial({
+      color: new THREE.Color(hex).multiplyScalar(k), transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const comet = new THREE.Mesh(new THREE.IcosahedronGeometry(0.13, 1), glow(5));
+    const puffGeo = new THREE.IcosahedronGeometry(0.09, 0);
+    scene.add(comet);
+    const dist = from.distanceTo(to);
+    const s = { t: 0 };
+    await Tween.to(s, { t: 1 }, {
+      duration: 160 + dist * 70, easing: "inOut",
+      onUpdate: () => {
+        comet.position.lerpVectors(from, to, s.t).y = 0.55;
+        const puff = new THREE.Mesh(puffGeo, glow(2.4));
+        puff.position.copy(comet.position);
+        scene.add(puff);
+        let life = 0.4;
+        effects.push(dt => {
+          life -= dt;
+          puff.scale.setScalar(Math.max(0.01, life / 0.4));
+          puff.material.opacity = Math.max(0, life / 0.4);
+          if (life <= 0) { scene.remove(puff); puff.material.dispose(); return false; }
+          return true;
+        });
+      },
+    });
+    scene.remove(comet);
+    g.position.set(tx, 0, tz);
+    g.visible = true;
+    Sound.boom();
+    spawnBurst(to.clone().add(mid(0.6)), hex, 22, 3);
+    dustRing(to, hex);
+    shake(0.05);
+    await Tween.to(g.scale, { x: 1, y: 1, z: 1 }, { duration: 240, easing: "outBack" });
+    g.scale.set(1, 1, 1);
+  }
+
   // stride (or glide, or animation-clip walk) to a world position
   function walkToPos(g, tx, tz, duration = 420) {
+    if (g.userData.teleport && Math.hypot(tx - g.position.x, tz - g.position.z) > 0.05) return teleportToPos(g, tx, tz);
     const fx = g.position.x, fz = g.position.z;
     const distTiles = Math.hypot(tx - fx, tz - fz);
     const cycles = Math.max(1, Math.round(distTiles * 1.3));

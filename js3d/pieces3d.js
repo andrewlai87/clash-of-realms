@@ -563,7 +563,7 @@ const Pieces3D = (() => {
     b: {
       k: { model: "warrok", h: 1.42, crown: true },
       q: { model: "nightshade", h: 1.32, crown: true },
-      b: { model: "maw", h: 1.27 },
+      b: { model: "maw", h: 1.27, efreet: true },
       n: { model: "vampire", h: 1.25 },
       r: { model: "mutant", h: 1.34 },
       p: { model: "skeletonzombie", h: 1.05 },
@@ -618,6 +618,86 @@ const Pieces3D = (() => {
     return g;
   }
 
+  // An efreet: the demon's legs are folded away and replaced by a whirling
+  // column of fire, his skin smoulders, and he teleports instead of walking.
+  function makeEfreet(g, char, h) {
+    for (const n of ["mixamorigLeftUpLeg", "mixamorigRightUpLeg"]) {
+      const b = char.getObjectByName(n);
+      if (b) b.scale.setScalar(0.001);
+    }
+    char.traverse(o => {
+      if (o.isMesh && o.material.emissive) {
+        o.material.emissive.setHex(0xff5a14);
+        o.material.emissiveIntensity = 0.22;
+      }
+    });
+    const fire = (hex, k, opacity) => new THREE.MeshBasicMaterial({
+      color: new THREE.Color(hex).multiplyScalar(k), transparent: true, opacity,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const top = h * 0.6;          // roughly the waist
+    const column = new THREE.Group();
+    const shells = [];
+    // nested flame funnels: narrow at the ground, flaring out under the torso
+    for (const [rTop, rBot, hex, k, op, spin] of [
+      [0.22, 0.05, 0xff3a0a, 1.2, 0.22, 1.7], [0.15, 0.035, 0xff8a1e, 1.8, 0.3, -2.6], [0.08, 0.02, 0xffe08a, 3.5, 0.6, 3.9],
+    ]) {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, top, 9, 4, true), fire(hex, k, op));
+      // twist the funnel so it reads as a vortex
+      const pos = m.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const a = (pos.getY(i) / top + 0.5) * 1.6;
+        const x = pos.getX(i), z = pos.getZ(i);
+        pos.setXYZ(i, x * Math.cos(a) - z * Math.sin(a), pos.getY(i), x * Math.sin(a) + z * Math.cos(a));
+      }
+      m.position.y = top / 2;
+      column.add(m);
+      shells.push({ m, spin });
+    }
+    const embers = [];
+    for (let i = 0; i < 7; i++) {
+      const e = new THREE.Mesh(new THREE.IcosahedronGeometry(0.022, 0), fire(0xffb347, 4, 1));
+      column.add(e);
+      embers.push({ e, off: i / 7, r: 0.1 + (i % 3) * 0.07, a: i * 2.4 });
+    }
+    // tongues of flame swirling up the funnel, so its outline is never still
+    const tongues = [];
+    const tongueGeo = new THREE.IcosahedronGeometry(0.06, 1);
+    for (let i = 0; i < 16; i++) {
+      const m = new THREE.Mesh(tongueGeo, fire(i % 3 === 0 ? 0xffd27a : i % 3 === 1 ? 0xff7a1e : 0xff3a0a, i % 3 === 0 ? 3.2 : 2, 0.8));
+      column.add(m);
+      tongues.push({ m, off: i / 16, a: i * 2.399, sp: 0.9 + (i % 5) * 0.12 });
+    }
+    g.add(column);
+    g.userData.teleport = true;
+    g.userData.flameColor = 0xff6a1a;
+    const prev = g.userData.animate;
+    g.userData.animate = t => {
+      if (prev) prev(t);
+      const s = t * 0.001;
+      for (const { m, spin } of shells) {
+        m.rotation.y = s * spin;
+        const w = 1 + Math.sin(s * 7 + spin) * 0.08;
+        m.scale.set(w, 1 + Math.sin(s * 5 + spin * 2) * 0.05, w);
+      }
+      for (const b of embers) {
+        const u = (s * 0.7 + b.off) % 1;
+        b.e.position.set(Math.cos(b.a + s * 2) * b.r * (0.4 + u), u * top * 1.5, Math.sin(b.a + s * 2) * b.r * (0.4 + u));
+        b.e.material.opacity = 1 - u;
+      }
+      for (const f of tongues) {
+        const u = (s * f.sp + f.off) % 1;
+        const r = 0.03 + u * 0.2;
+        const a = f.a + s * 3 + u * 2.5;
+        f.m.position.set(Math.cos(a) * r, u * top * 1.08, Math.sin(a) * r);
+        const k = 0.5 + u * 1.3;
+        f.m.scale.set(k, k * 2.3, k);
+        f.m.material.opacity = 0.85 * Math.sin(Math.PI * Math.min(1, u * 1.15));
+      }
+      char.position.y = Math.sin(s * 2.2) * 0.025;     // hover
+    };
+  }
+
   function buildMixamo(type, color) {
     const cfg = MX_ROLE[color] && MX_ROLE[color][type];
     if (!cfg || !MX[cfg.model] || !MX_SRC.Slash) return null;
@@ -662,6 +742,7 @@ const Pieces3D = (() => {
       clips.push(THREE.AnimationUtils.subclip(slash, "Idle", 0, 2, 30));
     }
     const g = rigUp(char, clips, type, color, scale, "Slash", cfg.h);
+    if (cfg.efreet) makeEfreet(g, char, cfg.h);
     // faction base, so the two armies read at a glance
     const P = palette(color);
     add(g, cyl(0.31, 0.34, 0.035, 28), mat(color === "w" ? 0xf2ecdc : 0x1d1a22, { roughness: 0.4 }), 0, 0.018, 0);
