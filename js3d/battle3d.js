@@ -85,63 +85,278 @@ const Battle3D = (() => {
     ].filter(Boolean));
   }
 
-  async function magicStrike(atk, def, dir, glowColor) {
+  // ================= spells =================
+  // Each caster has its own: the Ivory mage throws lightning, the Ivory
+  // queen sends a wave of light off her blade, the Obsidian mage hurls a
+  // fireball and the Obsidian queen calls a storm down from above.
+  const SPELLS = { wb: "lightning", wq: "blade", bb: "fireball", bq: "storm" };
+  const SPELL_REACH = { lightning: 2.4, fireball: 2.4, storm: 2.6, blade: 1.7 };
+  const SPELL_COLOR = { lightning: 0x7fc8ff, blade: 0xffd36a, fireball: 0xff7a1e, storm: 0xb36bff };
+
+  const hdr = (hex, k) => new THREE.Color(hex).multiplyScalar(k);
+
+  // unlit additive mesh, bright enough to bloom
+  function glowMesh(geo, hex, k = 3, opacity = 1) {
+    return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: hdr(hex, k), transparent: true, opacity,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    }));
+  }
+
+  function discard(obj) {
+    Board3D.scene.remove(obj);
+    obj.traverse(o => { if (o.material) o.material.dispose(); });
+  }
+
+  function flashLight(pos, hex, intensity, ms, range = 7) {
+    if (skipped) return;
+    const l = new THREE.PointLight(hex, intensity, range);
+    l.position.copy(pos);
+    Board3D.scene.add(l);
+    const s = { i: intensity };
+    Tween.to(s, { i: 0 }, { duration: ms, easing: "out", onUpdate: () => { l.intensity = s.i; } })
+      .then(() => Board3D.scene.remove(l));
+  }
+
+  const castOrigin = (atk, dir) => atk.position.clone()
+    .add(new THREE.Vector3(0, (atk.userData.height || 1.2) * 0.8, 0))
+    .addScaledVector(dir, 0.3);
+
+  // casting gesture; resolves when the caster has finished it
+  function castPose(atk) {
+    if (atk.userData.skinned) return clip(atk, "Spellcast_Shoot");
     const armR = atk.userData.parts && atk.userData.parts.armR;
-    const skinned = atk.userData.skinned;
-    let castClip = null;
-    Sound.magic();
-    if (skinned) {
-      castClip = clip(atk, "Spellcast_Shoot");
-      await pause(280);   // orb releases as the cast gesture peaks
-    } else {
+    return (async () => {
       await Promise.all([
         tw(atk.rotation, { x: 0.14 }, { duration: 300, easing: "out" }),
         armR ? tw(armR.rotation, { x: 2.9 }, { duration: 300, easing: "out" }) : null,
       ].filter(Boolean));
+      await pause(500);
+      tw(atk.rotation, { x: 0 }, { duration: 250, easing: "out" });
+      if (armR) tw(armR.rotation, { x: atk.userData.restArmR || 0 }, { duration: 250, easing: "out" });
+    })();
+  }
+
+  const UNIT_TUBE = new THREE.CylinderGeometry(1, 1, 1, 5, 1, true);
+  const Y_AXIS = new THREE.Vector3(0, 1, 0);
+
+  // one jagged bolt between two points (rebuilt every few frames to flicker)
+  function makeBolt(from, to, hex, width = 0.05, jag = 0.22, forks = 2) {
+    const g = new THREE.Group();
+    const axis = to.clone().sub(from);
+    const side = new THREE.Vector3(axis.z, 0, -axis.x);
+    if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
+    side.normalize();
+    const up = axis.clone().cross(side).normalize();
+    const n = Math.max(5, Math.round(axis.length() / 0.26));
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const p = from.clone().lerp(to, i / n);
+      if (i > 0 && i < n) {
+        p.addScaledVector(side, (Math.random() - 0.5) * jag).addScaledVector(up, (Math.random() - 0.5) * jag);
+      }
+      pts.push(p);
     }
-    // conjure orb above the mage
-    const orb = new THREE.Mesh(
-      new THREE.SphereGeometry(0.02, 10, 8),
-      new THREE.MeshStandardMaterial({ color: 0x111118, emissive: glowColor, emissiveIntensity: 3 })
-    );
-    const start = atk.position.clone().add(new THREE.Vector3(0, (atk.userData.height || 1.2) + 0.15, 0));
-    orb.position.copy(start);
-    Board3D.scene.add(orb);
-    const glow = new THREE.PointLight(glowColor, 0, 4);
-    glow.position.copy(start);
-    Board3D.scene.add(glow);
-    const grow = { r: 0.02, i: 0 };
-    await tw(grow, { r: 0.11, i: 1.6 }, {
-      duration: 340, easing: "out",
-      onUpdate: () => { orb.scale.setScalar(grow.r / 0.02); glow.intensity = grow.i; },
-    });
-    // arc to the defender
+    const seg = (a, b, w, color, k, op) => {
+      const m = glowMesh(UNIT_TUBE, color, k, op);
+      const d = b.clone().sub(a), len = d.length();
+      m.position.copy(a).addScaledVector(d, 0.5);
+      m.quaternion.setFromUnitVectors(Y_AXIS, d.normalize());
+      m.scale.set(w, len, w);
+      g.add(m);
+    };
+    for (let i = 0; i < n; i++) {
+      seg(pts[i], pts[i + 1], width * 0.4, 0xffffff, 6, 1);
+      seg(pts[i], pts[i + 1], width, hex, 2.2, 0.55);
+    }
+    for (let f = 0; f < forks; f++) {
+      let a = pts[1 + Math.floor(Math.random() * (n - 1))].clone();
+      for (let j = 0; j < 3; j++) {
+        const b = a.clone().addScaledVector(axis, 0.07)
+          .addScaledVector(side, (Math.random() - 0.5) * 0.5).addScaledVector(up, (Math.random() - 0.5) * 0.5);
+        seg(a, b, width * 0.45, hex, 3, 0.8);
+        a = b;
+      }
+    }
+    return g;
+  }
+
+  async function flickerBolt(from, to, hex, times, width, jag) {
+    for (let i = 0; i < times && !skipped; i++) {
+      const b = makeBolt(from, to, hex, width, jag);
+      Board3D.scene.add(b);
+      await pause(48);
+      discard(b);
+    }
+  }
+
+  async function lightningSpell(atk, def, dir, hex) {
+    Sound.magic();
+    const cast = castPose(atk);
+    const start = castOrigin(atk, dir);
+    const spark = glowMesh(new THREE.IcosahedronGeometry(0.07, 1), hex, 5);
+    spark.position.copy(start);
+    if (!skipped) Board3D.scene.add(spark);
+    flashLight(start, hex, 2.5, 420, 4);
+    const s = { k: 0.3 };
+    await tw(s, { k: 1.5 }, { duration: 300, easing: "in", onUpdate: () => spark.scale.setScalar(s.k * (0.8 + Math.random() * 0.4)) });
     const end = hitPoint(def);
-    const mid = start.clone().lerp(end, 0.5).add(new THREE.Vector3(0, 0.9, 0));
+    Sound.zap();
+    Board3D.shake(0.12);
+    flashHit(def, 0xbfe4ff);
+    clip(def, "Hit_A");
+    flashLight(end, hex, 9, 480);
+    Board3D.spawnBurst(end, 0xd8eeff, 22, 3.4);
+    await flickerBolt(start, end, hex, 6, 0.05, 0.24);
+    discard(spark);
+    Board3D.spawnBurst(end, hex, 10, 1.6);
+    await pause(140);
+    await cast;
+  }
+
+  async function stormSpell(atk, def, dir, hex) {
+    Sound.magic();
+    const cast = castPose(atk);
+    await pause(320);
+    const end = hitPoint(def);
+    Board3D.dustRing(def.position, hex);
+    for (let j = 0; j < 3 && !skipped; j++) {
+      const from = end.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.6, 5.5, (Math.random() - 0.5) * 1.6));
+      const foot = def.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.25, 0.05, (Math.random() - 0.5) * 0.25));
+      Sound.zap();
+      Board3D.shake(0.1 + j * 0.03);
+      flashHit(def, 0xe2c8ff);
+      if (j === 0) clip(def, "Hit_A");
+      flashLight(end, hex, 8, 320);
+      Board3D.spawnBurst(foot, 0xe9d8ff, 12, 3);
+      await flickerBolt(from, foot, hex, 3, 0.065, 0.34);
+      await pause(70);
+    }
+    await pause(120);
+    await cast;
+  }
+
+  async function fireballSpell(atk, def, dir, hex) {
+    Sound.magic();
+    const cast = castPose(atk);
+    const start = castOrigin(atk, dir);
+    const ball = glowMesh(new THREE.IcosahedronGeometry(0.11, 2), 0xffc45a, 5);
+    const halo = glowMesh(new THREE.IcosahedronGeometry(0.2, 2), hex, 1.6, 0.6);
+    ball.add(halo);
+    ball.position.copy(start);
+    const light = new THREE.PointLight(hex, 0, 6);
+    if (!skipped) Board3D.scene.add(ball, light);
+    const g = { k: 0.1 };
+    await tw(g, { k: 1 }, {
+      duration: 360, easing: "out",
+      onUpdate: () => { ball.scale.setScalar(g.k); light.position.copy(ball.position); light.intensity = g.k * 3; },
+    });
+    Sound.fire();
+    const end = hitPoint(def);
+    const mid = start.clone().lerp(end, 0.5).add(new THREE.Vector3(0, 0.45, 0));
+    const puffGeo = new THREE.IcosahedronGeometry(0.07, 0);
     const s = { t: 0 };
     await tw(s, { t: 1 }, {
-      duration: 380, easing: "in",
+      duration: 430, easing: "in",
       onUpdate: () => {
-        const a = start.clone().lerp(mid, s.t);
-        const b = mid.clone().lerp(end, s.t);
-        orb.position.copy(a.lerp(b, s.t));
-        glow.position.copy(orb.position);
+        const a = start.clone().lerp(mid, s.t), b = mid.clone().lerp(end, s.t);
+        ball.position.copy(a.lerp(b, s.t));
+        ball.rotation.x += 0.5;
+        light.position.copy(ball.position);
+        if (skipped) return;
+        // flame trail
+        const puff = glowMesh(puffGeo, Math.random() < 0.5 ? 0xffb347 : 0xff4a12, 2.6, 0.9);
+        puff.position.copy(ball.position).add(new THREE.Vector3((Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1));
+        Board3D.scene.add(puff);
+        let life = 0.36;
+        Board3D.addEffect(dt => {
+          life -= dt;
+          puff.position.y += dt * 0.5;
+          puff.scale.setScalar(Math.max(0.01, life / 0.36) * 1.4);
+          puff.material.opacity = Math.max(0, life / 0.36) * 0.9;
+          if (life <= 0) { discard(puff); return false; }
+          return true;
+        });
       },
     });
-    Board3D.scene.remove(orb);
+    discard(ball);
+    Board3D.scene.remove(light);
+    // explosion
     Sound.boom();
-    Board3D.spawnBurst(end, glowColor, 22, 3.2);
-    Board3D.shake(0.1);
-    flashHit(def);
+    Board3D.shake(0.16);
+    flashHit(def, 0xffb070);
     clip(def, "Hit_A");
-    const fade = { i: 2.4 };
-    tw(fade, { i: 0 }, { duration: 400, easing: "out", onUpdate: () => { glow.intensity = fade.i; } })
-      .then(() => Board3D.scene.remove(glow));
-    await pause(150);
-    if (skinned) { await castClip; return; }
-    tw(atk.rotation, { x: 0 }, { duration: 250, easing: "out" });
-    if (armR) tw(armR.rotation, { x: atk.userData.restArmR || 0 }, { duration: 250, easing: "out" });
+    flashLight(end, hex, 10, 650, 9);
+    Board3D.dustRing(def.position, hex);
+    Board3D.spawnBurst(end, 0xffb347, 26, 3.6);
+    Board3D.spawnBurst(end, 0x3a2418, 10, 2.4);
+    if (!skipped) {
+      for (const [color, k, size, ms] of [[0xffe6a0, 5, 0.75, 300], [hex, 2.5, 1.15, 460]]) {
+        const shell = glowMesh(new THREE.SphereGeometry(1, 28, 18), color, k, 0.9);
+        shell.position.copy(end);
+        shell.scale.setScalar(0.12);
+        Board3D.scene.add(shell);
+        const e = { k: 0.12 };
+        Tween.to(e, { k: size }, {
+          duration: ms, easing: "out",
+          onUpdate: v => { shell.scale.setScalar(e.k); shell.material.opacity = 0.9 * (1 - v); },
+        }).then(() => discard(shell));
+      }
+    }
+    await pause(260);
+    await cast;
   }
+
+  // the queen's sword stroke throws a crescent of light
+  async function bladeSpell(atk, def, dir, hex) {
+    Sound.magic();
+    const swing = clip(atk, atk.userData.attack);
+    tw(atk.position, { x: atk.position.x + dir.x * 0.2, z: atk.position.z + dir.z * 0.2 }, { duration: 260, easing: "inOut" });
+    await pause(360);
+    const start = castOrigin(atk, dir).addScaledVector(dir, 0.25);
+    const end = hitPoint(def);
+    const wave = new THREE.Group();
+    const arc = glowMesh(new THREE.TorusGeometry(0.5, 0.045, 6, 28, Math.PI * 0.9), hex, 4.5);
+    const arcSoft = glowMesh(new THREE.TorusGeometry(0.5, 0.13, 6, 28, Math.PI * 0.9), hex, 1.3, 0.45);
+    arc.rotation.z = arcSoft.rotation.z = Math.PI * 0.05;
+    wave.add(arc, arcSoft);
+    wave.position.copy(start);
+    wave.lookAt(end);
+    wave.rotateZ(-0.5);
+    const light = new THREE.PointLight(hex, 3, 5);
+    if (!skipped) Board3D.scene.add(wave, light);
+    Sound.clang();
+    const s = { t: 0 };
+    await tw(s, { t: 1 }, {
+      duration: 250, easing: "in",
+      onUpdate: () => {
+        wave.position.copy(start).lerp(end, s.t);
+        wave.scale.setScalar(0.7 + s.t * 0.9);
+        light.position.copy(wave.position);
+      },
+    });
+    discard(wave);
+    Board3D.scene.remove(light);
+    Sound.boom();
+    Board3D.shake(0.13);
+    flashHit(def, 0xffe9a8);
+    clip(def, "Hit_A");
+    flashLight(end, hex, 9, 520);
+    Board3D.spawnBurst(end, 0xffe9a8, 24, 3.2);
+    if (!skipped) {
+      const pillar = glowMesh(new THREE.CylinderGeometry(0.3, 0.3, 3.4, 18, 1, true), hex, 2.6, 0.8);
+      pillar.position.copy(def.position).add(new THREE.Vector3(0, 1.7, 0));
+      Board3D.scene.add(pillar);
+      const e = { k: 1 };
+      Tween.to(e, { k: 0.15 }, {
+        duration: 480, easing: "out",
+        onUpdate: v => { pillar.scale.set(e.k, 1, e.k); pillar.material.opacity = 0.8 * (1 - v); },
+      }).then(() => discard(pillar));
+    }
+    await swing;
+  }
+
+  const SPELL_FN = { lightning: lightningSpell, storm: stormSpell, fireball: fireballSpell, blade: bladeSpell };
 
   async function golemStrike(atk, def, dir, glowColor) {
     const p = atk.userData.parts || {};
@@ -179,13 +394,13 @@ const Battle3D = (() => {
     return def.position.clone().add(new THREE.Vector3(0, (def.userData.height || 1) * 0.55, 0));
   }
 
-  // brief red emissive flash on every mesh of the defender
-  function flashHit(def) {
+  // brief emissive flash on every mesh of the defender
+  function flashHit(def, hex = 0xff2222) {
     def.traverse(o => {
       if (o.isMesh && o.material && o.material.emissive) {
         const orig = o.material.emissive.getHex();
         const origI = o.material.emissiveIntensity;
-        o.material.emissive.setHex(0xff2222);
+        o.material.emissive.setHex(hex);
         o.material.emissiveIntensity = 0.9;
         setTimeout(() => {
           o.material.emissive.setHex(orig);
@@ -243,20 +458,44 @@ const Battle3D = (() => {
     const D = def.position.clone();
     const dir = D.clone().sub(A).setY(0).normalize();
 
-    // camera: swoop to a low side view
-    const mid = A.clone().lerp(D, 0.55).setY(0);
+    // how close the attacker gets: sword's reach, or casting range
+    const type = attackerPiece[1];
+    const spell = (type === "b" || type === "q") ? SPELLS[attackerPiece] : null;
+    const reach = spell ? SPELL_REACH[spell] : 0.95;
+    const gap = Math.hypot(D.x - A.x, D.z - A.z);
+    const stop = gap - reach > 0.35 ? D.clone().sub(dir.clone().multiplyScalar(reach)) : A.clone();
+    const fightGap = Math.hypot(D.x - stop.x, D.z - stop.z);
+
+    // camera: swoop to a low side view of where the fight happens
+    const mid = stop.clone().lerp(D, 0.5).setY(0);
     const perp = new THREE.Vector3(-dir.z, 0, dir.x);
     if (perp.dot(Board3D.camera.position.clone().sub(mid)) < 0) perp.negate();
-    const camPos = mid.clone().add(perp.multiplyScalar(3.8)).add(new THREE.Vector3(0, 1.9, 0));
+    const camPos = mid.clone().add(perp.multiplyScalar(3.2 + fightGap * 0.65)).add(new THREE.Vector3(0, 1.9, 0));
     const camRestore = Board3D.cinematicRestore;
+    // clear the shot: hide bystanders standing between the camera and the fight
+    const hidden = [];
+    if (!skipped) {
+      const look = mid.clone().setY(0.6);
+      const view = look.clone().sub(camPos);
+      const viewLen = view.length();
+      view.normalize();
+      for (const p of Board3D.piecesGroup.children) {
+        if (p === atk || p === def || !p.visible) continue;
+        const rel = p.position.clone().setY(0.6).sub(camPos);
+        const along = rel.dot(view);
+        const off = rel.clone().addScaledVector(view, -along).length();
+        if (along > 0 && along < viewLen - 0.4 && off < 0.75 + fightGap * 0.5 * (along / viewLen)) {
+          p.visible = false;
+          hidden.push(p);
+        }
+      }
+    }
     if (!skipped) await Board3D.cinematicTo(camPos, mid.clone().add(new THREE.Vector3(0, 0.55, 0)), 620);
 
     // square off
     await Promise.all([faceYaw(atk, Board3D.yawFor(dir)), faceYaw(def, Board3D.yawFor(dir.clone().negate()))]);
 
     // approach: stop short of the defender
-    const stop = D.clone().sub(dir.clone().multiplyScalar(0.95));
-    const type = attackerPiece[1];
     const approachDist = Math.hypot(stop.x - A.x, stop.z - A.z);
     if (approachDist > 0.35) {
       if (type === "n" && !atk.userData.skinned) {
@@ -284,7 +523,7 @@ const Battle3D = (() => {
     await pause(240);
 
     const glowColor = Pieces3D.palette(attackerPiece[0]).glow;
-    if (type === "b" || type === "q") await magicStrike(atk, def, dir, glowColor);
+    if (spell) await SPELL_FN[spell](atk, def, dir, SPELL_COLOR[spell]);
     else if (type === "r" && !atk.userData.skinned) await golemStrike(atk, def, dir, glowColor);
     else await meleeStrike(atk, def, dir, glowColor);
 
@@ -293,16 +532,24 @@ const Battle3D = (() => {
     Board3D.untrackAnim(def);
 
     // claim the square
-    await Promise.all([
-      tw(atk.position, { x: D.x, z: D.z, y: 0 }, { duration: 320, easing: "inOut" }),
-      faceYaw(atk, Board3D.factionYaw(atk.userData.color), 320),
-    ]);
+    const claimDist = Math.hypot(D.x - atk.position.x, D.z - atk.position.z);
+    if (!skipped && claimDist > 1.3) {
+      await Board3D.walkToPos(atk, D.x, D.z, 320 + claimDist * 170);
+      await faceYaw(atk, Board3D.factionYaw(atk.userData.color), 220);
+    } else {
+      await Promise.all([
+        tw(atk.position, { x: D.x, z: D.z, y: 0 }, { duration: 320, easing: "inOut" }),
+        faceYaw(atk, Board3D.factionYaw(atk.userData.color), 320),
+      ]);
+    }
+    atk.position.set(D.x, 0, D.z);
     if (!skipped && atk.userData.skinned) {
       clip(atk, "Cheer");     // victory flourish; commitMove fades back to Idle
       await pause(700);
     }
     await pause(skipped ? 0 : 240);
 
+    for (const p of hidden) p.visible = true;
     banner.hidden = true;
     Board3D.onSkip(null);
     await camRestore(skipped ? 0 : 650);

@@ -658,6 +658,7 @@ const Board3D = (() => {
     animateMove, quickCapture, slide, leap, walkTo, walkToPos, resetPose,
     setSelection, setLastMove, setCheck,
     spawnBurst, dustRing, shake, trackAnim, untrackAnim,
+    addEffect: fn => { effects.push(fn); },
     cinematicTo, cinematicRestore, flipCamera, setHome, onSkip,
     setRichGraphics: on => Gfx3D.setRich(on),
     worldX, worldZ, factionYaw, yawFor,

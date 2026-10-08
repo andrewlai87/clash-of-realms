@@ -80,6 +80,8 @@ const Sound = (() => {
     thud()    { noise(0.22, 220, 0.4, 0, 0.8); tone(70, 0.25, "sine", 0.3, 0, 40); },
     magic()   { tone(440, 0.3, "sine", 0.12, 0, 1320); tone(660, 0.25, "triangle", 0.08, 0.05, 1760); },
     boom()    { noise(0.35, 400, 0.35, 0, 0.7); tone(120, 0.3, "sawtooth", 0.12, 0, 50); },
+    zap()     { noise(0.12, 5200, 0.3, 0, 0.6); tone(1900, 0.09, "sawtooth", 0.07, 0, 180); noise(0.4, 260, 0.22, 0.05, 0.7); },
+    fire()    { noise(0.5, 700, 0.16, 0, 0.6); tone(170, 0.4, "sawtooth", 0.05, 0, 85); },
     death()   { tone(300, 0.35, "sawtooth", 0.1, 0, 90); noise(0.2, 600, 0.1, 0.05); },
     check()   { tone(523, 0.12, "square", 0.08); tone(494, 0.2, "square", 0.08, 0.12); },
     fanfare() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.35, "triangle", 0.15, i * 0.14)); },
