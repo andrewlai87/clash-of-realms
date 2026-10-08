@@ -460,7 +460,7 @@ const Board3D = (() => {
     const parts = g.userData.parts || {};
     const skinned = g.userData.skinned;
     const glide = !skinned && (!parts.legs || parts.legs.length === 0);
-    if (skinned) g.userData.play(distTiles > 1.3 ? "Running_A" : "Walking_A", 0.12);
+    if (skinned && !g.userData.glide) g.userData.play(distTiles > 1.3 ? "Running_A" : "Walking_A", 0.12);
     // heavies take one full stride per tile, slowly, and turn toward their path
     const steps = Math.max(1, Math.round(distTiles));
     const yaw0 = g.rotation.y;

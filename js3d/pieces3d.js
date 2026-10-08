@@ -398,6 +398,8 @@ const Pieces3D = (() => {
       ...Object.entries(MX_FILES).map(([n, u]) => quiet(u, g => { MX[n] = g; })),
       quiet(MOUNT_FILE, g => { mountSrc = g; }),
       quiet(MAGE_FILE, g => { mageSrc = g; }),
+      quiet(WINGS_FILE, g => { prepWings(g); }),
+      quiet(NYX_FILE, g => { nyxSrc = g; }),
       ...Object.entries(HEAVY).map(([c, cfg]) => quiet(cfg.file, g => { heavySrc[c] = g; })),
       ...Object.entries(MX_ANIMS).map(([n, u]) => quiet(u, g => {
         const clip = g.animations[0];
@@ -555,7 +557,7 @@ const Pieces3D = (() => {
   const MX_ROLE = {
     w: {
       k: { model: "paladin", h: 1.42, crown: true, metal: 0.85, rough: 0.42, tint: 2.2 },
-      q: { model: "maria", h: 1.32, crown: true },
+      q: { model: "maria", h: 1.32, crown: true, seraph: true },
       b: { model: "ganfaul", h: 1.25, prop: "staff" },
       n: { model: "knight", h: 1.25, prop: "sword" },
       r: { model: "uriel", h: 1.3, metal: 0.8, rough: 0.4, prop: "sword" },
@@ -747,6 +749,7 @@ const Pieces3D = (() => {
     }
     const g = rigUp(char, clips, type, color, scale, "Slash", cfg.h);
     if (cfg.efreet) makeEfreet(g, char, cfg.h);
+    if (cfg.seraph) makeSeraph(g, char, hipLen, cfg.h);
     // faction base, so the two armies read at a glance
     const P = palette(color);
     add(g, cyl(0.31, 0.34, 0.035, 28), mat(color === "w" ? 0xf2ecdc : 0x1d1a22, { roughness: 0.4 }), 0, 0.018, 0);
@@ -849,6 +852,153 @@ const Pieces3D = (() => {
     ];
     // the base stays behind when the drake takes off
     g.userData.animate = () => { const down = g.position.y < 0.03; base[0].visible = base[1].visible = down; };
+    return g;
+  }
+
+  // ================= the queens: a seraph and a goddess of night =================
+  // The most powerful piece never walks. Both queens float above their
+  // square on feathered wings, ringed by an aura, and glide when they move.
+  const WINGS_FILE = "assets/models/mx/wings.glb";
+  const NYX_FILE = "assets/models/mx/nyx.glb";
+  let wingsProto = null, nyxSrc = null;
+
+  // split the wing model into two halves that hinge at the spine
+  function prepWings(gltf) {
+    const root = gltf.scene;
+    root.updateMatrixWorld(true);
+    const proto = new THREE.Group();
+    const L = new THREE.Group(), R = new THREE.Group();
+    L.name = "wingL"; R.name = "wingR";
+    proto.add(L, R);
+    const meshes = [];
+    root.traverse(o => { if (o.isMesh) meshes.push(o); });
+    for (const m of meshes) {
+      const c = new THREE.Box3().setFromObject(m).getCenter(new THREE.Vector3());
+      (c.x >= 0 ? L : R).attach(m);
+    }
+    wingsProto = proto;
+  }
+
+  function makeWings(tint, emissive) {
+    const w = wingsProto.clone(true);
+    w.traverse(o => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.frustumCulled = false;
+      o.material = o.material.clone();
+      o.material.transparent = false;
+      o.material.alphaTest = 0.4;
+      o.material.depthWrite = true;
+      o.material.side = THREE.DoubleSide;
+      o.material.color.setHex(tint);
+      if (o.material.emissive) { o.material.emissive.setHex(emissive); o.material.emissiveIntensity = 0.25; }
+    });
+    return w;
+  }
+
+  // glowing ground disc + drifting motes; returns a per-frame updater
+  function makeAura(g, hex, h) {
+    const glow = (k, op) => new THREE.MeshBasicMaterial({
+      color: new THREE.Color(hex).multiplyScalar(k), transparent: true, opacity: op,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.46, 28), glow(1.6, 0.4));
+    disc.rotation.x = -Math.PI / 2;
+    disc.position.y = 0.062;
+    g.add(disc);
+    const motes = [];
+    const geo = new THREE.OctahedronGeometry(0.02);
+    for (let i = 0; i < 10; i++) {
+      const m = new THREE.Mesh(geo, glow(4, 1));
+      g.add(m);
+      motes.push({ m, off: i / 10, a: i * 2.399, r: 0.2 + (i % 4) * 0.07 });
+    }
+    return s => {
+      disc.material.opacity = 0.32 + Math.sin(s * 2) * 0.1;
+      for (const b of motes) {
+        const u = (s * 0.22 + b.off) % 1;
+        b.m.position.set(Math.cos(b.a + s * 0.6) * b.r, 0.1 + u * h * 1.15, Math.sin(b.a + s * 0.6) * b.r);
+        b.m.material.opacity = Math.sin(Math.PI * u);
+      }
+    };
+  }
+
+  const flap = (w, s, amt = 0.13, speed = 1.7) => {
+    const a = Math.sin(s * speed) * amt;
+    w.getObjectByName("wingL").rotation.y = a;
+    w.getObjectByName("wingR").rotation.y = -a;
+  };
+
+  // Ivory: the animated queen becomes a seraph (wings and halo ride her bones)
+  function makeSeraph(g, char, hipLen, h) {
+    const lift = 0.2;
+    const spine = char.getObjectByName("mixamorigSpine2");
+    const head = char.getObjectByName("mixamorigHead");
+    let wings = null;
+    if (wingsProto && spine) {
+      wings = makeWings(0xffffff, 0xfff1c8);
+      wings.scale.setScalar(hipLen * 1.75);
+      wings.position.set(0, hipLen * 0.08, -hipLen * 0.14);
+      spine.add(wings);
+    }
+    if (head) {
+      const halo = new THREE.Mesh(new THREE.TorusGeometry(hipLen * 0.24, hipLen * 0.016, 8, 40), new THREE.MeshBasicMaterial({
+        color: new THREE.Color(0xffd36a).multiplyScalar(4),
+      }));
+      halo.position.set(0, hipLen * 0.3, -hipLen * 0.1);
+      head.add(halo);
+    }
+    const aura = makeAura(g, 0xffd98a, h);
+    g.userData.glide = true;
+    const prev = g.userData.animate;
+    g.userData.animate = t => {
+      if (prev) prev(t);
+      const s = t * 0.001;
+      char.position.y = lift + Math.sin(s * 1.6) * 0.03;
+      if (wings) flap(wings, s);
+      aura(s);
+    };
+  }
+
+  // Obsidian: Nyx, a goddess of night. A single sculpted pose that drifts.
+  function buildNyx(type, color) {
+    if (type !== "q" || color !== "b" || !nyxSrc) return null;
+    const h = 1.5, lift = 0.2;
+    const fig = nyxSrc.scene.clone(true);
+    fig.traverse(o => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.receiveShadow = true;
+      o.material = o.material.clone();
+    });
+    const body = new THREE.Group();
+    fig.scale.setScalar(h);
+    fig.rotation.y = Math.PI;
+    body.add(fig);
+    let wings = null;
+    if (wingsProto) {
+      wings = makeWings(0x2a2233, 0x35186a);
+      wings.scale.setScalar(h * 0.95);
+      wings.position.set(0, h * 0.72, 0.1);
+      wings.rotation.y = Math.PI;
+      body.add(wings);
+    }
+    const g = new THREE.Group();
+    g.add(body);
+    add(g, cyl(0.31, 0.34, 0.035, 28), mat(0x1d1a22, { roughness: 0.4 }), 0, 0.018, 0);
+    add(g, cyl(0.325, 0.325, 0.012, 28), goldMat(0x9a2f3c), 0, 0.04, 0);
+    const aura = makeAura(g, 0x9a4dff, h);
+    g.userData = {
+      type, color, height: h, parts: null, restArmR: 0,
+      animate: t => {
+        const s = t * 0.001;
+        body.position.y = lift + Math.sin(s * 1.4) * 0.035;
+        body.rotation.y = Math.sin(s * 0.7) * 0.06;
+        if (wings) flap(wings, s, 0.16, 1.4);
+        aura(s);
+      },
+    };
+    g.rotation.y = Math.PI;
     return g;
   }
 
@@ -988,7 +1138,7 @@ const Pieces3D = (() => {
   }
 
   function build(type, color) {
-    const mount = buildMount(type, color) || buildHeavy(type, color) || buildFireMage(type, color);
+    const mount = buildMount(type, color) || buildHeavy(type, color) || buildFireMage(type, color) || buildNyx(type, color);
     if (mount) return mount;
     const g = buildMixamo(type, color) || (type !== "r" && modelsReady && buildSkinned(type, color));
     if (g) return g;

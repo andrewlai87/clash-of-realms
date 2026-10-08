@@ -33,7 +33,7 @@ const Battle3D = (() => {
   }
 
   // the 3D set's own creatures, where they differ from the classic titles
-  const CREATURES = { wr: "Ancient Treant", br: "Magma Golem", wn: "Ivory Wyvern", bn: "Obsidian Wyvern", bb: "Obsidian Pyromancer" };
+  const CREATURES = { wr: "Ancient Treant", br: "Magma Golem", wn: "Ivory Wyvern", bn: "Obsidian Wyvern", bb: "Obsidian Pyromancer", wq: "Seraph Queen", bq: "Nyx, Queen of Night" };
 
   function fighterName(piece) {
     return CREATURES[piece] || `${piece[0] === "w" ? "Ivory" : "Obsidian"} ${Pieces.TITLES[piece[1]]}`;
@@ -231,11 +231,11 @@ const Battle3D = (() => {
     await pause(320);
     const end = hitPoint(def);
     Board3D.dustRing(def.position, hex);
-    for (let j = 0; j < 3 && !skipped; j++) {
+    for (let j = 0; j < 5 && !skipped; j++) {
       const from = end.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.6, 5.5, (Math.random() - 0.5) * 1.6));
       const foot = def.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.25, 0.05, (Math.random() - 0.5) * 0.25));
       Sound.zap();
-      Board3D.shake(0.1 + j * 0.03);
+      Board3D.shake(0.1 + j * 0.035);
       flashHit(def, 0xe2c8ff);
       if (j === 0) clip(def, "Hit_A");
       flashLight(end, hex, 8, 320);
@@ -355,8 +355,10 @@ const Battle3D = (() => {
     flashLight(end, hex, 9, 520);
     Board3D.spawnBurst(end, 0xffe9a8, 24, 3.2);
     if (!skipped) {
-      const pillar = glowMesh(new THREE.CylinderGeometry(0.3, 0.3, 3.4, 18, 1, true), hex, 2.6, 0.8);
-      pillar.position.copy(def.position).add(new THREE.Vector3(0, 1.7, 0));
+      const pillar = glowMesh(new THREE.CylinderGeometry(0.42, 0.42, 9, 20, 1, true), hex, 3.2, 0.85);
+      pillar.position.copy(def.position).add(new THREE.Vector3(0, 4.5, 0));
+      Board3D.shake(0.22);
+      Board3D.dustRing(def.position, hex);
       Board3D.scene.add(pillar);
       const e = { k: 1 };
       Tween.to(e, { k: 0.15 }, {
