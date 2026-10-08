@@ -434,6 +434,264 @@ const Pieces3D = (() => {
     return c;
   }
 
+  // a king's crown: tall points, a jewelled band, and arches closing over an orb
+  function makeRoyalCrown(color) {
+    const dark = color === "b";
+    const c = new THREE.Group();
+    const metal = dark ? mat(0x2b2530, { roughness: 0.3, metalness: 0.9 }) : goldMat(0xe2b23c);
+    const trim = goldMat(dark ? 0x8a6a2c : 0xf3d27a);
+    const gem = hex => new THREE.MeshStandardMaterial({ color: 0x120608, emissive: hex, emissiveIntensity: 1.6, roughness: 0.2 });
+    const r = 0.14;
+    metal.flatShading = trim.flatShading = false;
+    add(c, cyl(r, r * 1.05, 0.075, 24), metal, 0, 0.04, 0);
+    add(c, new THREE.TorusGeometry(r * 1.04, 0.012, 8, 28), trim, 0, 0.008, 0, Math.PI / 2);
+    add(c, new THREE.TorusGeometry(r, 0.012, 8, 28), trim, 0, 0.078, 0, Math.PI / 2);
+    const n = 8;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2, tall = i % 2 === 0;
+      const h = dark ? (tall ? 0.2 : 0.12) : (tall ? 0.13 : 0.08);
+      add(c, cone(dark ? 0.02 : 0.028, h, 6), metal, Math.cos(a) * r * 0.95, 0.078 + h / 2, Math.sin(a) * r * 0.95);
+      if (!dark && tall) add(c, sph(0.016, 8), trim, Math.cos(a) * r * 0.95, 0.078 + h, Math.sin(a) * r * 0.95);
+      // jewels set around the band
+      const ga = a + Math.PI / n;
+      add(c, sph(0.018, 8), gem(dark ? 0xff1a2a : (i % 2 ? 0x2f7bff : 0xff2a3a)), Math.cos(ga) * r * 1.03, 0.042, Math.sin(ga) * r * 1.03);
+    }
+    if (!dark) {
+      // velvet cap, with four arches meeting under an orb
+      const cap = add(c, sph(r * 0.9, 16), new THREE.MeshStandardMaterial({ color: 0x7a1220, roughness: 0.95 }), 0, 0.09, 0);
+      cap.scale.y = 0.75;
+      for (let i = 0; i < 4; i++) {
+        const arch = add(c, new THREE.TorusGeometry(r * 0.95, 0.011, 6, 16, Math.PI), trim, 0, 0.085, 0);
+        arch.scale.y = 0.95;
+        arch.rotation.y = (i / 4) * Math.PI;
+      }
+      add(c, sph(0.03, 12), trim, 0, 0.245, 0);
+      add(c, box(0.014, 0.07, 0.014), trim, 0, 0.3, 0);
+      add(c, box(0.045, 0.014, 0.014), trim, 0, 0.305, 0);
+    } else {
+      add(c, sph(0.026, 10), gem(0xff1a2a), 0, 0.05, -r * 1.04);
+    }
+    return c;
+  }
+
+  let softTex = null;
+  function softBlot() {
+    if (softTex) return softTex;
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const x = c.getContext("2d"), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, "rgba(255,255,255,1)");
+    g.addColorStop(0.4, "rgba(255,255,255,0.45)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    x.fillStyle = g;
+    x.fillRect(0, 0, 64, 64);
+    return (softTex = new THREE.CanvasTexture(c));
+  }
+
+  // black steel to white enamel, keeping (and brightening) anything gilded
+  const royalMaps = {};
+  function royalTexture(tex) {
+    if (royalMaps[tex.uuid]) return royalMaps[tex.uuid];
+    const img = tex.image, c = document.createElement("canvas");
+    c.width = img.width; c.height = img.height;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height), px = d.data;
+    for (let i = 0; i < px.length; i += 4) {
+      const r = px[i], g = px[i + 1], b = px[i + 2];
+      const l = 0.3 * r + 0.59 * g + 0.11 * b;
+      // warm, saturated pixels are trim, leather and cloth: turn them gold
+      const warm = Math.max(0, Math.min(1, (r - b - 14) / 40));
+      const en = Math.min(255, 96 + l * 2.1);
+      px[i] = en * (1 - warm) + Math.min(255, 70 + l * 2.6) * warm;
+      px[i + 1] = en * 0.97 * (1 - warm) + Math.min(255, 45 + l * 2.0) * warm;
+      px[i + 2] = en * 0.9 * (1 - warm) + Math.min(255, l * 0.7) * warm;
+    }
+    ctx.putImageData(d, 0, 0);
+    const out = tex.clone();
+    out.source = new THREE.Source(c);
+    out.needsUpdate = true;
+    return (royalMaps[tex.uuid] = out);
+  }
+
+  // Kings rule by majesty, not might: a stepped dais, a royal cape, and an
+  // omen that follows them (a shaft of sunlight, or bats and a red mist).
+  function makeKing(g, char, color, h) {
+    const dark = color === "b";
+    const RISE = 0.1;
+    char.position.y = RISE;
+    g.userData.height = h + RISE;
+    // --- the dais ---
+    const stone = new THREE.MeshStandardMaterial(dark
+      ? { color: 0x17141c, roughness: 0.22, metalness: 0.35 } : { color: 0xf4efe4, roughness: 0.3, metalness: 0.05 });
+    const trim = goldMat(dark ? 0x9a2f3c : 0xe2b23c);
+    trim.flatShading = false;
+    add(g, cyl(0.45, 0.47, 0.05, 40), stone, 0, 0.025, 0);
+    add(g, cyl(0.37, 0.39, 0.05, 40), stone, 0, 0.075, 0);
+    add(g, new THREE.TorusGeometry(0.455, 0.011, 8, 48), trim, 0, 0.05, 0, Math.PI / 2);
+    add(g, new THREE.TorusGeometry(0.375, 0.011, 8, 48), trim, 0, 0.1, 0, Math.PI / 2);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+      add(g, sph(0.02, 8), trim, Math.cos(a) * 0.415, 0.055, Math.sin(a) * 0.415);
+    }
+
+    // --- the cape: hangs from the shoulders, behind him (his back is +z) ---
+    const neck = char.getObjectByName("mixamorigNeck");
+    const cape = new THREE.Group();
+    g.add(cape);
+    const shL = char.getObjectByName("mixamorigLeftShoulder"), shR = char.getObjectByName("mixamorigRightShoulder");
+    const at = new THREE.Vector3(), pl = new THREE.Vector3(), pr = new THREE.Vector3(), back = new THREE.Vector3();
+    const anchor = () => { g.updateMatrixWorld(true); return g.worldToLocal(neck.getWorldPosition(at)); };
+    // which way his back points, from the line of his shoulders (he may stand side-on)
+    let flip = 1;
+    const backDir = () => {
+      g.worldToLocal(shL.getWorldPosition(pl)); g.worldToLocal(shR.getWorldPosition(pr));
+      return back.set(pl.z - pr.z, 0, pr.x - pl.x).normalize().multiplyScalar(flip);
+    };
+    if (shL && shR) { g.updateMatrixWorld(true); if (backDir().z < 0) flip = -1; }     // in the bind pose he faces -z
+    let len = h * 0.72;
+    if (neck) len = anchor().y - 0.16;
+    const W0 = h * 0.2, W1 = h * (dark ? 0.4 : 0.34);
+    const geo = new THREE.PlaneGeometry(1, 1, 10, 14);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const u = pos.getX(i) * 2, v = 0.5 - pos.getY(i);          // u: -1..1 across, v: 0 at the shoulders, 1 at the hem
+      const w = W0 + (W1 - W0) * Math.pow(v, 0.8);
+      const wrap = (1 - v) * 0.55 + 0.12;                         // curls round the shoulders, flatter at the hem
+      pos.setXYZ(i, u * w * (1 - wrap * 0.12 * u * u), -v * len,
+        -u * u * w * wrap + v * h * 0.1 + Math.sin(v * 7 + u * 2.5) * 0.012 * v);
+    }
+    geo.computeVertexNormals();
+    const outer = new THREE.MeshStandardMaterial({ color: dark ? 0x121016 : 0x7c1424, roughness: 0.9, side: THREE.FrontSide });
+    const lining = new THREE.MeshStandardMaterial({ color: dark ? 0x8a1524 : 0xe9e2d2, roughness: 0.95, side: THREE.BackSide });
+    for (const m of [outer, lining]) { const sheet = new THREE.Mesh(geo, m); sheet.castShadow = true; cape.add(sheet); }
+    if (dark) {
+      // a high standing collar
+      const cg = new THREE.CylinderGeometry(h * 0.16, h * 0.105, h * 0.17, 20, 1, true, -Math.PI * 0.62, Math.PI * 1.24);
+      add(cape, cg, new THREE.MeshStandardMaterial({ color: 0x121016, roughness: 0.85, side: THREE.FrontSide }), 0, h * 0.045, -h * 0.085);
+      add(cape, cg, new THREE.MeshStandardMaterial({ color: 0x8a1524, roughness: 0.9, side: THREE.BackSide }), 0, h * 0.045, -h * 0.085);
+    } else {
+      // an ermine mantle across the shoulders, clasped in gold
+      const fur = new THREE.MeshStandardMaterial({ color: 0xf6f1e6, roughness: 1 });
+      const mantle = add(cape, new THREE.TorusGeometry(h * 0.105, h * 0.032, 10, 28), fur, 0, -h * 0.02, -h * 0.075, Math.PI / 2);
+      mantle.scale.set(1.3, 1, 0.75);
+      const spot = new THREE.MeshStandardMaterial({ color: 0x1a1614, roughness: 1 });
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2 + 0.3;
+        add(cape, sph(h * 0.009, 6), spot, Math.cos(a) * h * 0.13 * 1.3, -h * 0.004, -h * 0.075 + Math.sin(a) * h * 0.13);
+      }
+      add(cape, sph(h * 0.024, 12), trim, 0, -h * 0.03, -h * 0.205);
+    }
+    // hem trim
+    const hem = add(cape, new THREE.TorusGeometry(1, 0.012, 6, 20, Math.PI), trim, 0, 0, 0);
+    hem.visible = false;
+
+    // --- the omen ---
+    const omen = [];
+    if (!dark) {
+      // a shaft of sunlight, and gold motes rising in it
+      const sg = new THREE.CylinderGeometry(0.2, 0.44, 3.4, 28, 8, true);
+      const col = new Float32Array(sg.attributes.position.count * 3);
+      for (let i = 0; i < sg.attributes.position.count; i++) {
+        const k = Math.pow(Math.max(0, 1 - (sg.attributes.position.getY(i) + 1.7) / 3.4), 1.6);    // bright at his feet, gone overhead
+        col.set([k, k, k], i * 3);
+      }
+      sg.setAttribute("color", new THREE.BufferAttribute(col, 3));
+      const shaft = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({
+        color: new THREE.Color(0xffe2a0).multiplyScalar(0.07), vertexColors: true, transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+      }));
+      shaft.position.y = 1.75;
+      shaft.layers.set(1);
+      g.add(shaft);
+      for (let i = 0; i < 12; i++) {
+        const m = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: softBlot(), color: new THREE.Color(0xffd98a).multiplyScalar(1.6), transparent: true,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        }));
+        m.scale.setScalar(0.045);
+        m.layers.set(1);
+        g.add(m);
+        omen.push({ m, a: i * 2.4, r: 0.18 + (i % 5) * 0.06, sp: 0.1 + (i % 4) * 0.03, off: i / 12 });
+      }
+      g.userData.omen = s => {
+        shaft.material.opacity = 0.85 + Math.sin(s * 0.9) * 0.15;
+        for (const o of omen) {
+          const u = (s * o.sp + o.off) % 1;
+          o.m.position.set(Math.cos(o.a + s * 0.3) * o.r, 0.15 + u * 2.0, Math.sin(o.a + s * 0.3) * o.r);
+          o.m.material.opacity = Math.sin(Math.PI * u) * 0.9;
+        }
+      };
+    } else {
+      // bats wheeling overhead, and a red mist about his feet
+      const wing = new THREE.Shape();
+      wing.moveTo(0, 0.012); wing.lineTo(0.05, 0.03); wing.lineTo(0.1, 0.012);
+      wing.quadraticCurveTo(0.08, 0.0, 0.075, -0.022); wing.quadraticCurveTo(0.055, -0.005, 0.045, -0.026);
+      wing.quadraticCurveTo(0.03, -0.006, 0, -0.016); wing.closePath();
+      const wg = new THREE.ShapeGeometry(wing);
+      wg.rotateX(-Math.PI / 2);
+      const black = new THREE.MeshBasicMaterial({ color: 0x08060b, side: THREE.DoubleSide });
+      for (let i = 0; i < 5; i++) {
+        const bat = new THREE.Group();
+        const l = new THREE.Mesh(wg, black), r = new THREE.Mesh(wg, black);
+        r.scale.x = -1;
+        const body = new THREE.Mesh(sph(0.014, 6), black);
+        body.scale.set(1, 0.8, 1.9);
+        bat.add(l, r, body);
+        g.add(bat);
+        omen.push({ bat, l, r, a: i * 1.26, rad: 0.42 + (i % 3) * 0.11, y: h + 0.32 + (i % 4) * 0.13, sp: (0.9 + (i % 3) * 0.25) * (i % 2 ? 1 : -1), fl: 13 + i * 1.7 });
+      }
+      const mist = [];
+      for (let i = 0; i < 7; i++) {
+        const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: softBlot(), color: 0x9a1020, transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending }));
+        m.layers.set(1);
+        g.add(m);
+        mist.push({ m, a: i * 0.9, sp: 0.18 + (i % 3) * 0.07 });
+      }
+      g.userData.omen = s => {
+        for (const o of omen) {
+          const a = o.a + s * o.sp;
+          o.bat.position.set(Math.cos(a) * o.rad, o.y + Math.sin(s * 1.3 + o.a) * 0.07, Math.sin(a) * o.rad);
+          o.bat.rotation.y = -a + (o.sp > 0 ? Math.PI : 0);          // nose along its path
+          const f = Math.sin(s * o.fl) * 0.75;
+          o.l.rotation.z = f; o.r.rotation.z = -f;
+        }
+        for (const o of mist) {
+          const a = o.a + s * o.sp;
+          o.m.position.set(Math.cos(a) * 0.36, 0.2 + Math.sin(s * 0.7 + o.a) * 0.04, Math.sin(a) * 0.36);
+          o.m.scale.setScalar(0.5 + Math.sin(s * 0.5 + o.a * 2) * 0.1);
+          o.m.material.opacity = 0.16 + Math.sin(s * 0.8 + o.a) * 0.06;
+        }
+      };
+    }
+
+    // per frame: the cape follows the shoulders and trails when he moves
+    const prev = g.userData.animate, last = new THREE.Vector3().copy(g.position);
+    let trail = 0, yaw = 0;
+    g.userData.animate = t => {
+      if (prev) prev(t);
+      const s = t * 0.001;
+      g.userData.omen(s);
+      const speed = Math.hypot(g.position.x - last.x, g.position.z - last.z);
+      last.copy(g.position);
+      trail += (Math.min(0.5, speed * 9) - trail) * 0.12;
+      cape.rotation.x = 0.05 + trail + Math.sin(s * 1.3) * 0.02;
+    };
+    const post = g.userData.postAnimate;
+    g.userData.postAnimate = () => {
+      if (post) post();
+      if (!neck) return;
+      const p = anchor();
+      if (shL && shR) {
+        const b = backDir();
+        yaw += Math.atan2(Math.sin(Math.atan2(b.x, b.z) - yaw), Math.cos(Math.atan2(b.x, b.z) - yaw)) * 0.25;
+      }
+      cape.rotation.y = yaw;
+      cape.position.set(p.x + Math.sin(yaw) * h * 0.085, p.y - h * 0.005, p.z + Math.cos(yaw) * h * 0.085);
+    };
+    g.userData.postAnimate();
+  }
+
   function buildSkinned(type, color) {
     const cfg = ROLE[color] && ROLE[color][type];
     if (!cfg || !MODELS[cfg.model]) return null;
@@ -559,7 +817,7 @@ const Pieces3D = (() => {
   // h = standing height on the board (a tile is 1 unit wide)
   const MX_ROLE = {
     w: {
-      k: { model: "paladin", h: 1.42, crown: true, metal: 0.85, rough: 0.42, tint: 2.2 },
+      k: { model: "paladin", h: 1.42, crown: true, royal: true, metal: 0.4, rough: 0.34, tint: 1 },
       q: { model: "maria", h: 1.32, seraph: true },
       b: { model: "ganfaul", h: 1.25, prop: "staff", archmage: true },
       n: { model: "knight", h: 1.25, prop: "sword" },
@@ -718,6 +976,7 @@ const Pieces3D = (() => {
         o.frustumCulled = false;
         o.material = o.material.clone();
         if (cfg.metal != null) { o.material.metalness = cfg.metal; o.material.roughness = cfg.rough; }
+        if (cfg.royal && o.material.map && o.material.map.image) o.material.map = royalTexture(o.material.map);
         // lift the Ivory army's albedo so the sides read apart even in silhouette
         o.material.color.multiplyScalar(cfg.tint ?? (color === "w" ? 1.45 : 0.95));
       }
@@ -771,7 +1030,7 @@ const Pieces3D = (() => {
     if (cfg.crown) {
       const head = char.getObjectByName("mixamorigHead");
       if (head) {
-        const crown = makeCrown(color, type === "k");
+        const crown = type === "k" ? makeRoyalCrown(color) : makeCrown(color, false);
         crown.scale.setScalar(hipLen * 0.72);
         crown.position.y = hipLen * (cfg.crownY ?? 0.2);
         head.add(crown);
@@ -810,6 +1069,7 @@ const Pieces3D = (() => {
     if (cfg.efreet) makeEfreet(g, char, cfg.h);
     if (cfg.seraph) makeSeraph(g, char, hipLen, cfg.h);
     if (cfg.archmage) makeArchmage(g, char, hipLen, cfg.h);
+    if (type === "k") { makeKing(g, char, color, cfg.h); return g; }
     // faction base, so the two armies read at a glance
     const P = palette(color);
     add(g, cyl(0.31, 0.34, 0.035, 28), mat(color === "w" ? 0xf2ecdc : 0x1d1a22, { roughness: 0.4 }), 0, 0.018, 0);

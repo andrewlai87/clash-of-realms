@@ -65,6 +65,7 @@ const Board3D = (() => {
     statusGroup = new THREE.Group();
     scene.add(piecesGroup, markerGroup, statusGroup);
 
+    camera.layers.enable(1);     // see Gfx3D: things on layer 1 are drawn but cast no ambient shadow
     Gfx3D.init(renderer, scene, camera, { hideInDepth: [markerGroup, statusGroup] });
     buildLights();
     buildBoard();

@@ -304,7 +304,9 @@ const Gfx3D = (() => {
       scene.overrideMaterial = depthOverride;
       renderer.shadowMap.autoUpdate = false;
       renderer.setRenderTarget(depthRT);
+      camera.layers.disable(1);                       // layer 1: light and haze, which occlude nothing
       renderer.render(scene, camera);
+      camera.layers.enable(1);
       renderer.shadowMap.autoUpdate = true;
       scene.overrideMaterial = null;
       hideInDepth.forEach((g, i) => { g.visible = vis[i]; });
@@ -324,6 +326,7 @@ const Gfx3D = (() => {
       finalQuad.render(renderer);
     } catch (err) {
       console.warn("Rich graphics failed, falling back:", err);
+      camera.layers.enable(1);
       scene.overrideMaterial = null;
       renderer.shadowMap.autoUpdate = true;
       rich = false;
