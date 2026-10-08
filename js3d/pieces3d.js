@@ -764,6 +764,7 @@ const Pieces3D = (() => {
         prop.position.set(0, 9, 2);
         prop.rotation.x = -Math.PI / 2;      // blade up out of the fist
         hand.add(prop);
+        char.userData.propObj = prop;
       }
     }
     if (cfg.crown) {
@@ -1020,16 +1021,19 @@ const Pieces3D = (() => {
     }
     // the staff head burns with light
     const hand = char.getObjectByName("mixamorigRightHand");
+    const staff = char.userData.propObj;
     let flare = null;
-    if (hand) {
+    if (staff) {
       flare = new THREE.Mesh(new THREE.IcosahedronGeometry(11, 1), glow(3.5, 0.7));
-      flare.position.set(0, 9, 2);
-      const tip = new THREE.Group();
-      tip.rotation.x = -Math.PI / 2;
-      tip.position.set(0, 9, 2);
       flare.position.set(0, 121, 0);
-      tip.add(flare);
-      hand.add(tip);
+      staff.add(flare);
+      g.userData.castFrom = flare;          // spells leave from the staff head
+      // hold the staff upright whatever the hand is doing
+      const hq = new THREE.Quaternion();
+      g.userData.postAnimate = () => {
+        hand.getWorldQuaternion(hq);
+        staff.quaternion.copy(hq.invert());
+      };
     }
     g.userData.teleport = true;
     g.userData.teleportStyle = "lightning";

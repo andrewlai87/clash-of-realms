@@ -204,13 +204,16 @@ const Battle3D = (() => {
   async function lightningSpell(atk, def, dir, hex) {
     Sound.magic();
     const cast = castPose(atk);
-    const start = castOrigin(atk, dir);
+    const origin = () => (atk.userData.castFrom
+      ? atk.userData.castFrom.getWorldPosition(new THREE.Vector3()) : castOrigin(atk, dir));
+    const start = origin();
     const spark = glowMesh(new THREE.IcosahedronGeometry(0.07, 1), hex, 5);
     spark.position.copy(start);
     if (!skipped) Board3D.scene.add(spark);
     flashLight(start, hex, 2.5, 420, 4);
     const s = { k: 0.3 };
-    await tw(s, { k: 1.5 }, { duration: 300, easing: "in", onUpdate: () => spark.scale.setScalar(s.k * (0.8 + Math.random() * 0.4)) });
+    await tw(s, { k: 1.5 }, { duration: 300, easing: "in", onUpdate: () => { spark.position.copy(origin()); spark.scale.setScalar(s.k * (0.8 + Math.random() * 0.4)); } });
+    start.copy(origin());
     const end = hitPoint(def);
     Sound.zap();
     Board3D.shake(0.12);
