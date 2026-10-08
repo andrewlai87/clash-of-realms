@@ -563,7 +563,7 @@ const Pieces3D = (() => {
       b: { model: "ganfaul", h: 1.25, prop: "staff" },
       n: { model: "knight", h: 1.25, prop: "sword" },
       r: { model: "uriel", h: 1.3, metal: 0.8, rough: 0.4, prop: "sword" },
-      p: { model: "castleguard", h: 0.98, arms: true },
+      p: { model: "castleguard", h: 0.98, arms: true, shieldOut: 9 },
     },
     b: {
       k: { model: "vampire", h: 1.4, crown: true, crownY: 0.1 },
@@ -571,7 +571,7 @@ const Pieces3D = (() => {
       b: { model: "maw", h: 1.27, efreet: true },
       n: { model: "vampire", h: 1.25 },
       r: { model: "mutant", h: 1.34 },
-      p: { model: "skeletonzombie", h: 1.05, arms: "rusted" },
+      p: { model: "skeletonzombie", h: 1.05, arms: "rusted", shieldOut: 6 },
     },
   };
   // the hips rest along one axis of their parent; its length is our size gauge
@@ -733,6 +733,17 @@ const Pieces3D = (() => {
         if (!src || !bone) continue;
         const prop = src.clone(true);
         prop.position.set(0, 0, 0); prop.rotation.set(0, 0, 0); prop.scale.setScalar(k);
+        if (name === "shield") {
+          // larger, and pushed out along its face normal so the arm sits behind it
+          const grow = 1.35;
+          const box = new THREE.Box3().setFromObject(prop);
+          const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+          const e = size.toArray(), thin = e.indexOf(Math.min(...e));
+          prop.scale.setScalar(k * grow);
+          prop.position.copy(c).multiplyScalar(1 - grow);           // grow about its own centre
+          const out = new THREE.Vector3().setComponent(thin, Math.sign(c.getComponent(thin)) || 1);
+          prop.position.addScaledVector(out, (cfg.shieldOut || 0) * k);
+        }
         prop.traverse(o => {
           if (!o.isMesh) return;
           o.castShadow = true;
