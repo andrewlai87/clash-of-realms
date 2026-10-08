@@ -747,6 +747,9 @@ const Pieces3D = (() => {
       const slash = clips.find(c => c.name === "Slash");
       clips.push(THREE.AnimationUtils.subclip(slash, "Idle", 0, 2, 30));
     }
+    // bind-pose leg rotations, captured before any animation plays
+    char.userData.legRest = ["LeftUpLeg", "RightUpLeg", "LeftLeg", "RightLeg", "LeftFoot", "RightFoot"]
+      .map(n => char.getObjectByName("mixamorig" + n)).filter(Boolean).map(bn => [bn, bn.quaternion.clone()]);
     const g = rigUp(char, clips, type, color, scale, "Slash", cfg.h);
     if (cfg.efreet) makeEfreet(g, char, cfg.h);
     if (cfg.seraph) makeSeraph(g, char, hipLen, cfg.h);
@@ -950,62 +953,25 @@ const Pieces3D = (() => {
       head.add(halo);
       // long hair down her back
       const u = hipLen / 100;
-      const hairGeo = new THREE.CylinderGeometry(11.5 * u, 5 * u, 74 * u, 14, 8, true, Math.PI * 0.45, Math.PI * 1.1);
+      const hairGeo = new THREE.CylinderGeometry(11 * u, 4 * u, 66 * u, 16, 10, true, Math.PI * 0.55, Math.PI * 0.9);
       const hp = hairGeo.attributes.position;
       for (let i = 0; i < hp.count; i++) {
-        const y = hp.getY(i), t = 0.5 - y / (74 * u);            // 0 at the crown, 1 at the tips
+        const y = hp.getY(i), t = 0.5 - y / (66 * u);            // 0 at the crown, 1 at the tips
         const a = Math.atan2(hp.getX(i), hp.getZ(i));
         const wave = 1 + Math.sin(a * 7) * 0.06 + Math.sin(t * 9 + a * 3) * 0.05 * t;
-        hp.setXYZ(i, hp.getX(i) * wave, y, hp.getZ(i) * wave - Math.min(1, t * 2.2) * 15 * u);
+        hp.setXYZ(i, hp.getX(i) * wave, y, hp.getZ(i) * wave - Math.min(1, t * 2.5) * 7 * u + Math.sin(t * 5) * 1.5 * u);
       }
       hairGeo.computeVertexNormals();
       const hair = new THREE.Mesh(hairGeo, new THREE.MeshStandardMaterial({ color: 0xcfa24e, roughness: 0.55, side: THREE.DoubleSide }));
-      hair.position.set(0, -24 * u, -5 * u);
+      hair.position.set(0, -20 * u, -3 * u);
       hair.castShadow = true;
       head.add(hair);
     }
-    // a modest gown over her armour: bodice on the spine, long skirt from the hips
-    {
-      const u = hipLen / 100;
-      const cloth = new THREE.MeshStandardMaterial({ color: 0xf3ecdc, roughness: 0.7, side: THREE.DoubleSide });
-      const gold = goldMat(0xd8ab4a);
-      const lathe = pts => new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r * u, y * u)), 22);
-      const spine1 = char.getObjectByName("mixamorigSpine1"), hips = char.getObjectByName("mixamorigHips");
-      if (spine1) {
-        const bodice = new THREE.Mesh(lathe([[16.5, -16], [15.5, -6], [18, 8], [19.5, 17], [17, 26], [12, 31]]), cloth);
-        bodice.scale.z = 1.08;
-        bodice.position.z = -1 * u;
-        bodice.castShadow = true;
-        spine1.add(bodice);
-        const collar = new THREE.Mesh(new THREE.TorusGeometry(12 * u, 1.3 * u, 8, 24), gold);
-        collar.rotation.x = Math.PI / 2;
-        collar.scale.y = 0.86;
-        collar.position.set(0, 31 * u, 1.5 * u);
-        spine1.add(collar);
-      }
-      if (hips) {
-        // the gown is floor-length and she never walks, so her legs are
-        // folded away beneath it (otherwise a wide stance pokes through)
-        for (const n of ["mixamorigLeftUpLeg", "mixamorigRightUpLeg"]) {
-          const b = char.getObjectByName(n);
-          if (b) b.scale.setScalar(0.001);
-        }
-        const skirt = new THREE.Mesh(lathe([[16.5, 10], [19, 0], [27, -20], [38, -52], [47, -84], [52, -104]]), cloth);
-        skirt.scale.z = 1.05;
-        skirt.castShadow = true;
-        hips.add(skirt);
-        const belt = new THREE.Mesh(new THREE.TorusGeometry(17.3 * u, 1.8 * u, 8, 24), gold);
-        belt.rotation.x = Math.PI / 2;
-        belt.scale.y = 0.9;
-        belt.position.y = 8 * u;
-        hips.add(belt);
-        const hem = new THREE.Mesh(new THREE.TorusGeometry(52 * u, 1.3 * u, 8, 36), gold);
-        hem.rotation.x = Math.PI / 2;
-        hem.scale.y = 1.05;
-        hem.position.y = -104 * u;
-        hips.add(hem);
-      }
-    }
+    // Her fitted gown is part of the model (built in Blender and skinned to
+    // her body). She floats, so her legs hang straight beneath it instead of
+    // following the fighting stance in the animations.
+    const legRest = char.userData.legRest || [];
+    g.userData.postAnimate = () => { for (const [bn, q] of legRest) bn.quaternion.copy(q); };
     const aura = makeAura(g, 0xffd98a, h);
     g.userData.glide = true;
     const prev = g.userData.animate;
