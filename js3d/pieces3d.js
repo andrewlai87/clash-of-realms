@@ -797,6 +797,32 @@ const Pieces3D = (() => {
     idle.name = "Idle";
     const g = rigUp(char, [idle], type, color, cfg.h, null, cfg.h * 0.9);
     g.userData.heavy = true;
+    // These models ship with an idle only, so the walk is layered on top of
+    // it: thighs, knees and upper arms are swung about the body's side axis.
+    const bone = re => { let hit = null; char.traverse(o => { if (!hit && o.isBone && re.test(o.name)) hit = o; }); return hit; };
+    const limbs = [
+      { thigh: bone(/L_Thigh_\d+$|^L_leg/), calf: bone(/L_Calf_\d+$|^L_knee/), arm: bone(/R_Upperarm_\d+$|^R_arm/), off: 0 },
+      { thigh: bone(/R_Thigh_\d+$|^R_leg/), calf: bone(/R_Calf_\d+$|^R_knee/), arm: bone(/L_Upperarm_\d+$|^L_arm/), off: Math.PI },
+    ];
+    const walk = g.userData.walk = { phase: 0, amp: 0 };
+    const side = new THREE.Vector3(), rot = new THREE.Quaternion(), pq = new THREE.Quaternion();
+    const swing = (b, angle) => {
+      if (!b) return;
+      // rotate in world space about the side axis: local' = P^-1 * R * P * local
+      b.parent.getWorldQuaternion(pq);
+      rot.setFromAxisAngle(side, angle);
+      b.quaternion.premultiply(pq).premultiply(rot).premultiply(pq.invert());
+    };
+    g.userData.postAnimate = () => {
+      if (walk.amp < 0.001) return;
+      side.set(1, 0, 0).applyQuaternion(g.quaternion);
+      for (const l of limbs) {
+        const ph = walk.phase + l.off;
+        swing(l.thigh, Math.sin(ph) * 0.6 * walk.amp);
+        swing(l.calf, -Math.max(0, Math.cos(ph)) * 0.75 * walk.amp);
+        swing(l.arm, Math.sin(ph) * 0.4 * walk.amp);
+      }
+    };
     const P = palette(color);
     add(g, cyl(0.36, 0.39, 0.035, 28), mat(color === "w" ? 0xf2ecdc : 0x1d1a22, { roughness: 0.4 }), 0, 0.018, 0);
     add(g, cyl(0.375, 0.375, 0.012, 28), goldMat(color === "w" ? P.trim : 0x9a2f3c), 0, 0.04, 0);

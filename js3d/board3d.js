@@ -25,6 +25,7 @@ const Board3D = (() => {
   function tickPiece(p, now, mixerDt) {
     if (p.userData.animate) p.userData.animate(now);
     if (p.userData.mixer) p.userData.mixer.update(mixerDt);
+    if (p.userData.postAnimate) p.userData.postAnimate();
   }
 
   function trackAnim(g) { animExtra.add(g); }
@@ -409,6 +410,16 @@ const Board3D = (() => {
     const skinned = g.userData.skinned;
     const glide = !skinned && (!parts.legs || parts.legs.length === 0);
     if (skinned) g.userData.play(distTiles > 1.3 ? "Running_A" : "Walking_A", 0.12);
+    // heavies take one full stride per tile, slowly, and turn toward their path
+    const steps = Math.max(1, Math.round(distTiles));
+    const yaw0 = g.rotation.y;
+    let yawDelta = 0;
+    if (g.userData.heavy && distTiles > 0.05) {
+      duration = Math.max(duration, 650 * steps);
+      yawDelta = (yawFor({ x: tx - fx, z: tz - fz }) - yaw0) % (Math.PI * 2);
+      if (yawDelta > Math.PI) yawDelta -= Math.PI * 2;
+      if (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
+    }
     const s = { t: 0 };
     return Tween.to(s, { t: 1 }, {
       duration, easing: "inOut",
@@ -416,12 +427,16 @@ const Board3D = (() => {
         g.position.x = fx + (tx - fx) * s.t;
         g.position.z = fz + (tz - fz) * s.t;
         if (g.userData.heavy) {
-          // lumbering stride: sway side to side and shake the board on each footfall
-          const w = s.t * Math.PI * cycles;
-          g.position.y = Math.abs(Math.sin(w)) * 0.06;
-          g.rotation.z = Math.sin(w) * 0.07;
-          const step = Math.floor(s.t * cycles);
-          if (step !== g.userData._step) { g.userData._step = step; if (step > 0) { shake(0.05); Sound.thud(); } }
+          // heavy stride: real leg and arm swing, turning to face the way it walks
+          const env = Math.min(1, s.t / 0.15, (1 - s.t) / 0.15);
+          const ph = s.t * Math.PI * 2 * steps;
+          g.userData.walk.phase = ph;
+          g.userData.walk.amp = env;
+          g.position.y = Math.abs(Math.cos(ph)) * 0.035 * env;
+          g.rotation.z = Math.sin(ph) * 0.045 * env;
+          g.rotation.y = yaw0 + yawDelta * env;
+          const foot = Math.floor(ph / Math.PI + 0.5);
+          if (foot !== g.userData._step) { g.userData._step = foot; if (foot > 0) { shake(0.045); Sound.thud(); } }
           return;
         }
         if (skinned) return;
@@ -437,7 +452,7 @@ const Board3D = (() => {
       },
     }).then(() => {
       g.position.y = 0;
-      if (g.userData.heavy) { g.rotation.z = 0; g.userData._step = 0; shake(0.06); }
+      if (g.userData.heavy) { g.rotation.z = 0; g.rotation.y = yaw0; g.userData.walk.amp = 0; g.userData._step = 0; shake(0.06); }
       if (skinned) g.userData.play("Idle", 0.15);
       else resetPose(g);
     });
