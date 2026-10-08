@@ -905,6 +905,36 @@ const Pieces3D = (() => {
     }
     const g = rigUp(char, clips, type, color, scale, null, size.y * scale * 0.8);
     g.userData.flyer = true;
+    // fire breath: the battle rears the neck (headPitch) and opens the jaw (jawOpen)
+    const bones = {};
+    root.traverse(o => { if (o.isBone) bones[o.name] = o; });
+    const head = bones.head_021, jaw = bones.jaw_022, neck = bones.spine017_020;
+    if (head && jaw) {
+      const tip = bones.mouth7L_029 || jaw;
+      const posed = [neck, head, jaw].filter(Boolean);
+      // bones the clips leave alone would otherwise keep turning every frame
+      const tracked = new Set(clips.flatMap(c => c.tracks.map(t => t.name.split(".")[0])));
+      const rest = posed.map(b => (tracked.has(b.name) ? null : b.quaternion.clone()));
+      const side = new THREE.Vector3(), rot = new THREE.Quaternion(), pq = new THREE.Quaternion();
+      const turn = (b, angle) => {
+        b.parent.getWorldQuaternion(pq);
+        rot.setFromAxisAngle(side, angle);
+        b.quaternion.premultiply(pq).premultiply(rot).premultiply(pq.invert());
+      };
+      g.userData.breath = true;
+      g.userData.headPitch = 0;
+      g.userData.jawOpen = 0;
+      g.userData.mouth = v => tip.getWorldPosition(v);
+      g.userData.postAnimate = () => {
+        posed.forEach((b, i) => { if (rest[i]) b.quaternion.copy(rest[i]); });
+        const hp = g.userData.headPitch, jo = g.userData.jawOpen;
+        if (Math.abs(hp) < 0.001 && jo < 0.001) return;
+        side.set(1, 0, 0).applyQuaternion(g.quaternion);
+        if (neck) turn(neck, hp * 0.5);
+        turn(head, hp * 0.5);
+        turn(jaw, jo);
+      };
+    }
     const P = palette(color);
     const base = [
       add(g, cyl(0.31, 0.34, 0.035, 28), mat(color === "w" ? 0xf2ecdc : 0x1d1a22, { roughness: 0.4 }), 0, 0.018, 0),

@@ -390,6 +390,160 @@ const Battle3D = (() => {
     });
   }
 
+  // a soft round blot, so flames blend into each other instead of reading as balls
+  const PUFF_TEX = (() => {
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const x = c.getContext("2d"), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, "rgba(255,255,255,1)");
+    g.addColorStop(0.35, "rgba(255,255,255,0.55)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    x.fillStyle = g;
+    x.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  })();
+  const SUNFIRE = [0xffe08a, 0xffc24a, 0xffa520];        // the phoenix burns white-gold
+  const DRAGONFIRE = [0xffc45a, 0xff7a1e, 0xff3a12];     // the wyvern burns orange-red
+
+  // one drifting puff of flame (or smoke): swells, then fades
+  function puff(pos, vel, hex, size, life, smoke) {
+    if (skipped) return;
+    const m = new THREE.Sprite(new THREE.SpriteMaterial(smoke
+      ? { map: PUFF_TEX, color: hex, transparent: true, opacity: 0.5, depthWrite: false }
+      : { map: PUFF_TEX, color: hdr(hex, 1.25), transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending }));
+    const top = m.material.opacity;
+    m.position.copy(pos);
+    m.scale.setScalar(size * 0.12);
+    Board3D.scene.add(m);
+    let age = 0;
+    Board3D.addEffect(dt => {
+      age += dt;
+      const u = age / life;
+      if (u >= 1 || skipped) { discard(m); return false; }
+      m.position.addScaledVector(vel, dt);
+      vel.y += dt * (smoke ? 0.9 : 1.6);        // heat rises
+      const k = 0.3 * size * (0.4 + u * (smoke ? 1.8 : 1.1));
+      m.scale.set(k, k * (smoke ? 1 : 1.45), 1);     // tongues of flame stand taller than wide
+      m.material.opacity = top * (1 - u) * Math.min(1, u * 6);
+      return true;
+    });
+  }
+
+  const jitter = k => new THREE.Vector3((Math.random() - 0.5) * k, (Math.random() - 0.5) * k, (Math.random() - 0.5) * k);
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+
+  // the defender is wreathed in flame for a while
+  function burnOn(def, ms, colors) {
+    if (skipped) return;
+    const h = def.userData.height || 1;
+    let left = ms / 1000, acc = 0;
+    Board3D.addEffect(dt => {
+      left -= dt; acc += dt;
+      if (left <= 0 || skipped || !def.parent) return false;
+      while (acc > 0.012) {
+        acc -= 0.012;
+        const a = Math.random() * Math.PI * 2, r = 0.12 + Math.random() * 0.16;
+        const p = def.position.clone().add(new THREE.Vector3(Math.cos(a) * r, (def.userData.lift || 0) + Math.random() * h * 0.75, Math.sin(a) * r));
+        puff(p, new THREE.Vector3(0, 0.7 + Math.random() * 0.6, 0), pick(colors), 0.55 + Math.random() * 0.45, 0.42);
+      }
+      return true;
+    });
+  }
+
+  // a ring of flame licking up around a square
+  function fireRing(pos, ms, colors) {
+    if (skipped) return;
+    let left = ms / 1000, acc = 0;
+    const total = left;
+    Board3D.addEffect(dt => {
+      left -= dt; acc += dt;
+      if (left <= 0 || skipped) return false;
+      const r = 0.2 + 0.32 * Math.min(1, (total - left) * 5);     // the ring races outward
+      while (acc > 0.01) {
+        acc -= 0.01;
+        const a = Math.random() * Math.PI * 2;
+        puff(new THREE.Vector3(pos.x + Math.cos(a) * r, 0.08, pos.z + Math.sin(a) * r),
+          new THREE.Vector3(0, 0.5 + Math.random() * 0.5, 0), pick(colors), 0.5 + Math.random() * 0.4, 0.4);
+      }
+      return true;
+    });
+  }
+
+  // a scorch mark that slowly fades from the board
+  function scorch(pos) {
+    if (skipped) return;
+    const m = new THREE.Mesh(new THREE.CircleGeometry(0.46, 28), new THREE.MeshBasicMaterial({ color: 0x0a0706, transparent: true, opacity: 0, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(pos.x, 0.012, pos.z);
+    Board3D.scene.add(m);
+    const s = { o: 0 };
+    Tween.to(s, { o: 0.6 }, { duration: 500, onUpdate: () => { m.material.opacity = s.o; } })
+      .then(() => Tween.wait(1400))
+      .then(() => Tween.to(s, { o: 0 }, { duration: 1600, onUpdate: () => { m.material.opacity = s.o; } }))
+      .then(() => { discard(m); m.geometry.dispose(); });
+  }
+
+  // the wyvern hangs in the air and pours fire down on its prey
+  async function breathStrike(atk, def) {
+    const u = atk.userData;
+    Sound.magic();
+    // rear the head back and draw breath
+    await Promise.all([
+      tw(u, { headPitch: -0.55, jawOpen: 0.15 }, { duration: 320, easing: "out" }),
+      tw(atk.rotation, { x: 0.22 }, { duration: 320, easing: "out" }),
+    ]);
+    await pause(90);
+    // lunge and let it go
+    await Promise.all([
+      tw(u, { headPitch: 0.4, jawOpen: 0.55 }, { duration: 140, easing: "in" }),
+      tw(atk.rotation, { x: -0.12 }, { duration: 140, easing: "in" }),
+    ]);
+    Sound.fire();
+    const target = hitPoint(def), mouth = new THREE.Vector3();
+    const light = new THREE.PointLight(0xff6a1e, 0, 8);
+    light.position.copy(target);
+    if (!skipped) Board3D.scene.add(light);
+    scorch(def.position);
+    let hit = false, acc = 0, last = performance.now(), glowAt = 0;
+    const s = { t: 0 };
+    await tw(s, { t: 1 }, {
+      duration: 1150,
+      onUpdate: () => {
+        if (skipped) return;
+        const now = performance.now();
+        acc += Math.min(0.1, (now - last) / 1000); last = now;
+        u.mouth(mouth);
+        const aim = target.clone().sub(mouth), dist = aim.length();
+        aim.normalize();
+        light.intensity = 5 + Math.random() * 5;
+        while (acc > 0.005) {
+          acc -= 0.005;
+          const speed = 5 + Math.random() * 1.5, life = dist / speed + 0.16;
+          // white-hot at the jaws, reddening as the stream spreads
+          puff(mouth.clone().add(jitter(0.04)), aim.clone().multiplyScalar(speed).add(jitter(0.9)), pick(DRAGONFIRE), 0.45 + Math.random() * 0.5, life);
+          if (Math.random() < 0.05) puff(target.clone().add(jitter(0.4)), new THREE.Vector3(0, 0.8, 0).add(jitter(0.4)), 0x15100e, 1.3, 1.1, true);
+        }
+        if (!hit && s.t > 0.18) {
+          hit = true;
+          Sound.boom();
+          Board3D.shake(0.12);
+          Board3D.dustRing(def.position);
+          clip(def, "Hit_A");
+          burnOn(def, 1500, DRAGONFIRE);
+        }
+        // flashHit restores itself after 180ms; never overlap two of them
+        if (hit && now - glowAt > 230) { glowAt = now; flashHit(def, 0xff5a00); }
+        if (hit && Math.random() < 0.4) Board3D.spawnBurst(target, 0xff7a1e, 2, 2.2);
+      },
+    });
+    Board3D.scene.remove(light);
+    flashLight(target, 0xff6a1e, 5, 500, 7);
+    await Promise.all([
+      tw(u, { headPitch: 0, jawOpen: 0 }, { duration: 300, easing: "out" }),
+      tw(atk.rotation, { x: 0 }, { duration: 300, easing: "out" }),
+    ]);
+  }
+
   // a burst of fire: two expanding shells, sparks and a flash
   function fireBlast(pos, hex) {
     flashLight(pos, hex, 10, 650, 9);
@@ -455,29 +609,41 @@ const Battle3D = (() => {
     const fire = !!atk.userData.fireDive, lift = atk.userData.lift || 0;
     await tw(atk.rotation, { x: 0.35 }, { duration: 200, easing: "out" });     // rear back
     if (fire) Sound.fire();
-    const puffGeo = fire && new THREE.IcosahedronGeometry(0.09, 1);
+    // the phoenix becomes a ball of sunfire as it falls
+    let ball = null;
+    if (fire && !skipped) {
+      ball = new THREE.Group();
+      ball.add(glowMesh(new THREE.SphereGeometry(0.3, 20, 14), 0xffa520, 0.8, 0.28), glowMesh(new THREE.SphereGeometry(0.17, 16, 12), 0xffd27a, 1.3, 0.4));
+      ball.position.y = lift + 0.5;
+      ball.scale.setScalar(0.1);
+      atk.add(ball);
+    }
     await Promise.all([
       tw(atk.position, { x: def.position.x - dir.x * 0.35, z: def.position.z - dir.z * 0.35, y: fire ? 0.35 - lift : 0.3 }, {
         duration: fire ? 300 : 230, easing: "in",
         onUpdate: () => {
           if (!fire || skipped) return;
+          ball.scale.setScalar(Math.min(1.1, ball.scale.x + 0.12) * (0.9 + Math.random() * 0.2));
           // a comet tail of flame behind the dive
-          const puff = glowMesh(puffGeo, Math.random() < 0.5 ? 0xffd27a : 0xff7a1e, 2.8, 0.9);
-          puff.position.copy(atk.position).add(new THREE.Vector3((Math.random() - 0.5) * 0.25, lift + (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.25));
-          Board3D.scene.add(puff);
-          let life = 0.45;
-          Board3D.addEffect(dt => {
-            life -= dt;
-            puff.scale.setScalar(Math.max(0.01, life / 0.45) * 1.6);
-            puff.material.opacity = Math.max(0, life / 0.45) * 0.9;
-            if (life <= 0) { discard(puff); return false; }
-            return true;
-          });
+          for (let i = 0; i < 2; i++) {
+            puff(atk.position.clone().add(new THREE.Vector3(0, lift + 0.5, 0)).add(jitter(0.4)),
+              dir.clone().multiplyScalar(-1.2).add(jitter(0.5)), pick(SUNFIRE), 0.9 + Math.random() * 0.7, 0.5);
+          }
         },
       }),
       tw(atk.rotation, { x: -0.5 }, { duration: fire ? 300 : 230, easing: "in" }),
     ]);
-    if (fire) { Sound.boom(); fireBlast(hitPoint(def), 0xff8a1e); }
+    if (fire) {
+      Sound.boom();
+      fireBlast(hitPoint(def), 0xffc24a);
+      fireRing(def.position, 1100, SUNFIRE);
+      burnOn(def, 1300, SUNFIRE);
+      if (ball) {
+        const b = ball, e = { k: b.scale.x };
+        Tween.to(e, { k: 0.05 }, { duration: 420, easing: "out", onUpdate: () => b.scale.setScalar(e.k) })
+          .then(() => { atk.remove(b); b.traverse(o => { if (o.material) o.material.dispose(); }); });
+      }
+    }
     Sound.thud();
     Sound.clang();
     Board3D.spawnBurst(hitPoint(def), glowColor, 20, 3.2);
@@ -666,6 +832,7 @@ const Battle3D = (() => {
 
     const glowColor = Pieces3D.palette(attackerPiece[0]).glow;
     if (spell) await SPELL_FN[spell](atk, def, dir, SPELL_COLOR[spell]);
+    else if (flyer && atk.userData.breath) await breathStrike(atk, def);
     else if (flyer) await swoopStrike(atk, def, dir, glowColor);
     else if (type === "r" && (!atk.userData.skinned || atk.userData.heavy)) await golemStrike(atk, def, dir, glowColor);
     else await meleeStrike(atk, def, dir, glowColor);
