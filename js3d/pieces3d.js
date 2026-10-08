@@ -515,7 +515,7 @@ const Pieces3D = (() => {
   }
 
   // Kings rule by majesty, not might: a stepped dais, a royal cape, and an
-  // omen that follows them (a shaft of sunlight, or bats and a red mist).
+  // omen that follows them (rising gold motes, or bats and a red mist).
   function makeKing(g, char, color, h) {
     const dark = color === "b";
     const RISE = 0.1;
@@ -589,21 +589,7 @@ const Pieces3D = (() => {
     // --- the omen ---
     const omen = [];
     if (!dark) {
-      // a shaft of sunlight, and gold motes rising in it
-      const sg = new THREE.CylinderGeometry(0.2, 0.44, 3.4, 28, 8, true);
-      const col = new Float32Array(sg.attributes.position.count * 3);
-      for (let i = 0; i < sg.attributes.position.count; i++) {
-        const k = Math.pow(Math.max(0, 1 - (sg.attributes.position.getY(i) + 1.7) / 3.4), 1.6);    // bright at his feet, gone overhead
-        col.set([k, k, k], i * 3);
-      }
-      sg.setAttribute("color", new THREE.BufferAttribute(col, 3));
-      const shaft = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({
-        color: new THREE.Color(0xffe2a0).multiplyScalar(0.07), vertexColors: true, transparent: true,
-        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-      }));
-      shaft.position.y = 1.75;
-      shaft.layers.set(1);
-      g.add(shaft);
+      // gold motes drifting up around him
       for (let i = 0; i < 12; i++) {
         const m = new THREE.Sprite(new THREE.SpriteMaterial({
           map: softBlot(), color: new THREE.Color(0xffd98a).multiplyScalar(1.6), transparent: true,
@@ -615,7 +601,6 @@ const Pieces3D = (() => {
         omen.push({ m, a: i * 2.4, r: 0.18 + (i % 5) * 0.06, sp: 0.1 + (i % 4) * 0.03, off: i / 12 });
       }
       g.userData.omen = s => {
-        shaft.material.opacity = 0.85 + Math.sin(s * 0.9) * 0.15;
         for (const o of omen) {
           const u = (s * o.sp + o.off) % 1;
           o.m.position.set(Math.cos(o.a + s * 0.3) * o.r, 0.15 + u * 2.0, Math.sin(o.a + s * 0.3) * o.r);
