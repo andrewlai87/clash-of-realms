@@ -165,68 +165,6 @@ gown.parent = arm; gown.matrix_parent_inverse = arm.matrix_world.inverted()
 am = gown.modifiers.new("Armature", "ARMATURE"); am.object = arm
 print("GOWN verts", len(me.vertices), "groups", len(gown.vertex_groups))
 
-# ---- long hair: tapered locks from the back of the head down to the waist ----
-top = bone_z("HeadTop_End"); hb = bone_z("Head")
-hc = (hb + top) / 2; hr = (top.z - hb.z) * 0.5; rx = 0.04 * H; ry = 0.05 * H
-def back_extent(z):
-    sl = [(p.y - hips.y) * -FRONT for p in pts if abs(p.z - z) < 0.03 * H and abs(p.x - hips.x) < 0.09 * H]
-    return max(sl) if sl else 0.06 * H
-hv, hf, hz = [], [], []
-import random
-random.seed(7)
-LOCKS, SEG, SIDES = 26, 14, 5
-z_end = hips.z + 0.03 * H
-for li in range(LOCKS):
-    th = math.radians(-82 + 164 * li / (LOCKS - 1))          # 0 = straight back
-    layer = (li % 3) * 0.006 * H
-    length = 0.68 + 0.32 * random.random()
-    phase = random.random() * 6.28
-    path = []
-    for si in range(SEG + 1):
-        s_ = si / SEG
-        z = (hc.z - hr * 0.1) + (z_end - (hc.z - hr * 0.1)) * s_ * length
-        # around the skull near the top, then gathering toward the spine
-        spread = rx * (1 - 0.3 * min(1.0, s_ * 1.6))
-        x = hc.x + math.sin(th) * spread + math.sin(s_ * 8 + phase) * 0.011 * H * s_
-        if z > hb.z:                                           # on the head
-            dz = (z - hc.z) / (hr * 1.08)
-            ring = ry * math.sqrt(max(0.05, 1 - dz * dz))
-            back = math.cos(th) * ring + 0.002 * H
-        else:                                                  # down the neck and back
-            back = max(back_extent(z) + 0.012 * H, math.cos(th) * ry * 0.7 * (1 - s_)) + layer
-            back -= (abs(math.sin(th)) ** 2) * 0.02 * H * (1 - s_)
-        y = hips.y - FRONT * back if z <= hb.z else hc.y - FRONT * back
-        path.append(Vector((x, y, z)))
-    base = len(hv)
-    for si, c in enumerate(path):
-        s_ = si / SEG
-        rad = (0.004 + 0.017 * math.sin(math.pi * min(1.0, 0.12 + s_ * 0.95)) ** 0.8) * H
-        for k in range(SIDES):
-            a2 = 2 * math.pi * k / SIDES
-            hv.append((c.x + math.cos(a2) * rad, c.y + math.sin(a2) * rad * 0.55, c.z)); hz.append(c.z)
-    for si in range(SEG):
-        for k in range(SIDES):
-            a0 = base + si * SIDES + k; a1 = base + si * SIDES + (k + 1) % SIDES
-            hf.append((a0, a1, a1 + SIDES, a0 + SIDES))
-hme = bpy.data.meshes.new("LongHair"); hme.from_pydata(hv, [], hf); hme.update()
-for p_ in hme.polygons: p_.use_smooth = True
-bm = bmesh.new(); bm.from_mesh(hme); bmesh.ops.recalc_face_normals(bm, faces=bm.faces); bm.to_mesh(hme); bm.free()
-hair = bpy.data.objects.new("LongHair", hme); bpy.context.scene.collection.objects.link(hair)
-hm = bpy.data.materials.new("LongHair"); hm.use_nodes = True
-b = hm.node_tree.nodes["Principled BSDF"]; b.inputs["Base Color"].default_value = (0.40, 0.26, 0.075, 1); b.inputs["Roughness"].default_value = 0.42
-hme.materials.append(hm)
-chain = [("Head", hb.z), ("Neck", neck.z), ("Spine2", bone_z("Spine2").z), ("Spine1", bone_z("Spine1").z), ("Spine", bone_z("Spine").z)]
-groups = {n: hair.vertex_groups.new(name="mixamorig:" + n) for n, _ in chain}
-for vi, z in enumerate(hz):
-    if z >= chain[0][1]: groups["Head"].add([vi], 1.0, "REPLACE"); continue
-    if z <= chain[-1][1]: groups["Spine"].add([vi], 1.0, "REPLACE"); continue
-    for (n0, z0), (n1, z1) in zip(chain, chain[1:]):
-        if z1 <= z <= z0:
-            t_ = (z0 - z) / max(1e-6, z0 - z1)
-            groups[n0].add([vi], 1 - t_, "REPLACE"); groups[n1].add([vi], t_, "REPLACE"); break
-hair.parent = arm; hair.matrix_parent_inverse = arm.matrix_world.inverted()
-ham = hair.modifiers.new("Armature", "ARMATURE"); ham.object = arm
-print("HAIR verts", len(hv))
 
 for mat in bpy.data.materials:
     if not mat.use_nodes: continue
