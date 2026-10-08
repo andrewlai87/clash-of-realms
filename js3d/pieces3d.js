@@ -1159,7 +1159,7 @@ const Pieces3D = (() => {
           if (cfg.halberd) {
             // a buckler strapped to the forearm, where the big shield's centre was
             const b = makeBuckler();
-            b.scale.setScalar(k * 1.3);
+            b.scale.setScalar(k * 2.275);
             b.position.copy(c).addScaledVector(out, (cfg.shieldOut || 0) * k);
             // slide it down the forearm toward the wrist
             const wrist = char.getObjectByName("mixamorigLeftHand");
