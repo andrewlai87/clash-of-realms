@@ -1878,11 +1878,16 @@ const Pieces3D = (() => {
       rot.setFromAxisAngle(side, angle);
       b.quaternion.premultiply(pq).premultiply(rot).premultiply(pq.invert());
     };
-    // the treant calls roots out of the earth: armRaise lifts both limbs for the slam
+    // the treant's great branch slam: armRaise swings both limbs up and over,
+    // armGrow swells them into heavy boughs. (Set userData.roots instead of
+    // userData.slam to bring back the root-eruption attack.)
     g.userData.armRaise = 0;
-    if (color === "w") g.userData.roots = true;
+    g.userData.armGrow = 0;
+    if (color === "w") g.userData.slam = true;
+    const armRest = limbs.map(l => l.arm && l.arm.scale.clone());
     g.userData.postAnimate = () => {
       const raise = g.userData.armRaise;
+      limbs.forEach((l, i) => { if (l.arm) l.arm.scale.copy(armRest[i]).multiplyScalar(1 + g.userData.armGrow * 0.75); });
       if (walk.amp < 0.001 && Math.abs(raise) < 0.001) return;
       side.set(1, 0, 0).applyQuaternion(g.quaternion);
       if (Math.abs(raise) > 0.001) for (const l of limbs) swing(l.arm, raise * ARM_UP);

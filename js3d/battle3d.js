@@ -804,6 +804,67 @@ const Battle3D = (() => {
     await pause(250);
   }
 
+  // the treant heaves both limbs overhead, swollen into great boughs, and brings them down
+  async function branchSlam(atk, def, dir) {
+    const u = atk.userData, D = def.position.clone();
+    Sound.magic();
+    await Promise.all([
+      tw(u, { armRaise: 1.6, armGrow: 1 }, { duration: 620, easing: "out" }),
+      tw(atk.rotation, { x: 0.24 }, { duration: 620, easing: "out" }),
+      tw(atk.position, { y: 0.06 }, { duration: 620, easing: "out" }),
+    ]);
+    await pause(200);
+    const home = atk.position.clone();
+    await Promise.all([
+      tw(u, { armRaise: 0.62 }, { duration: 150, easing: "in" }),
+      tw(atk.rotation, { x: -0.42 }, { duration: 150, easing: "in" }),
+      tw(atk.position, { x: home.x + dir.x * 0.3, z: home.z + dir.z * 0.3, y: 0 }, { duration: 150, easing: "in" }),
+    ]);
+    Sound.thud();
+    Sound.boom();
+    Board3D.shake(0.3);
+    Board3D.dustRing(D);
+    flashHit(def);
+    clip(def, "Hit_A");
+    Board3D.spawnBurst(hitPoint(def), 0x8d6a45, 24, 3.6);                 // splinters
+    Board3D.spawnBurst(hitPoint(def).setY(0.9), 0x7fbf5a, 18, 2.8);       // leaves shaken loose
+    if (!skipped) {
+      // the board cracks under the blow, and a shockwave rolls out
+      const marks = [];
+      for (let i = 0; i < 7; i++) {
+        const a = i / 7 * Math.PI * 2 + Math.random() * 0.5, len = 0.32 + Math.random() * 0.3;
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(0.045, len),
+          new THREE.MeshBasicMaterial({ color: 0x120c08, transparent: true, opacity: 0.85, depthWrite: false }));
+        m.position.set(D.x + Math.sin(a) * (0.12 + len / 2), 0.013, D.z + Math.cos(a) * (0.12 + len / 2));
+        m.rotation.x = -Math.PI / 2;
+        m.rotation.z = a + Math.PI;
+        Board3D.scene.add(m);
+        marks.push(m);
+      }
+      const f = { o: 0.85 };
+      Tween.wait(1100).then(() => Tween.to(f, { o: 0 }, { duration: 1500, onUpdate: () => { for (const m of marks) m.material.opacity = f.o; } }))
+        .then(() => { for (const m of marks) { discard(m); m.geometry.dispose(); } });
+      const wave = glowMesh(new THREE.RingGeometry(0.3, 0.42, 40), 0xd9c9a0, 1.2, 0.7);
+      wave.rotation.x = -Math.PI / 2;
+      wave.position.set(D.x, 0.05, D.z);
+      Board3D.scene.add(wave);
+      const w = { k: 1 };
+      Tween.to(w, { k: 4.5 }, { duration: 480, easing: "out", onUpdate: v => { wave.scale.set(w.k, w.k, 1); wave.material.opacity = 0.7 * (1 - v); } })
+        .then(() => { discard(wave); wave.geometry.dispose(); });
+      // the blow drives the victim down for a moment
+      const sq = { k: 1 };
+      const sy = def.scale.y;
+      Tween.to(sq, { k: 0.78 }, { duration: 80, onUpdate: () => { def.scale.y = sy * sq.k; } })
+        .then(() => Tween.to(sq, { k: 1 }, { duration: 260, easing: "outBack", onUpdate: () => { def.scale.y = sy * sq.k; } }));
+    }
+    await pause(380);
+    await Promise.all([
+      tw(u, { armRaise: 0, armGrow: 0 }, { duration: 420, easing: "inOut" }),
+      tw(atk.rotation, { x: 0 }, { duration: 420, easing: "out" }),
+      tw(atk.position, { x: home.x, z: home.z }, { duration: 420, easing: "out" }),
+    ]);
+  }
+
   async function golemStrike(atk, def, dir, glowColor) {
     const p = atk.userData.parts || {};
     Sound.magic();
@@ -911,7 +972,7 @@ const Battle3D = (() => {
     const type = attackerPiece[1];
     const spell = (type === "b" || type === "q") ? SPELLS[attackerPiece] : null;
     const flyer = !!atk.userData.flyer;
-    const reach = spell ? SPELL_REACH[spell] : flyer ? 1.25 : atk.userData.roots ? 2.1 : 0.95;
+    const reach = spell ? SPELL_REACH[spell] : flyer ? 1.25 : atk.userData.roots ? 2.1 : atk.userData.slam ? 1.0 : 0.95;
     const gap = Math.hypot(D.x - A.x, D.z - A.z);
     const stop = (flyer || gap - reach > 0.35) ? D.clone().sub(dir.clone().multiplyScalar(reach)) : A.clone();
     const fightGap = Math.hypot(D.x - stop.x, D.z - stop.z);
@@ -980,6 +1041,7 @@ const Battle3D = (() => {
     else if (flyer && atk.userData.breath) await breathStrike(atk, def);
     else if (flyer) await swoopStrike(atk, def, dir, glowColor);
     else if (atk.userData.roots) await rootStrike(atk, def, dir);
+    else if (atk.userData.slam) await branchSlam(atk, def, dir);
     else if (type === "r" && (!atk.userData.skinned || atk.userData.heavy)) await golemStrike(atk, def, dir, glowColor);
     else await meleeStrike(atk, def, dir, glowColor);
 
