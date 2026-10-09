@@ -692,6 +692,19 @@ const Board3D = (() => {
     }
   }
 
+  // a suggested move: a green ring under the piece and on its destination
+  let hintMeshes = [];
+  function setHint(move) {
+    for (const m of hintMeshes) statusGroup.remove(m);
+    hintMeshes = [];
+    if (!move) return;
+    for (const [sq, geo] of [[move.from, new THREE.RingGeometry(0.36, 0.46, 28)], [move.to, new THREE.RingGeometry(0.2, 0.32, 28)]]) {
+      const m = flatMesh(geo, 0x4fe08a, 0.95, MARKER_Y.select, worldX(sq), worldZ(sq));
+      statusGroup.add(m);
+      hintMeshes.push(m);
+    }
+  }
+
   function setCheck(sq) {
     if (checkMesh) { statusGroup.remove(checkMesh); checkMesh = null; }
     if (sq == null) return;
@@ -802,7 +815,7 @@ const Board3D = (() => {
   return {
     init, fullSync, getPiece, addPiece, removePiece, commitMove,
     animateMove, quickCapture, slide, leap, walkTo, walkToPos, resetPose,
-    setSelection, setLastMove, setCheck,
+    setSelection, setLastMove, setCheck, setHint,
     spawnBurst, dustRing, shake, trackAnim, untrackAnim,
     addEffect: fn => { effects.push(fn); },
     cinematicTo, cinematicRestore, flipCamera, setHome, onSkip,

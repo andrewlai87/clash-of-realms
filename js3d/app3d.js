@@ -93,8 +93,35 @@
 
   // ---------- moving ----------
 
+  // ---------- hints ----------
+
+  const SQ = i => "abcdefgh"[i % 8] + (8 - Math.floor(i / 8));
+  let hintId = 0;
+
+  function clearHint() {
+    hintId++;
+    Board3D.setHint(null);
+    if (statusMsg.textContent.startsWith("💡")) statusMsg.textContent = "";
+  }
+
+  async function showHint() {
+    if (state.busy || state.over) return;
+    if (state.mode === "ai" && game.turn !== state.playerColor) return;
+    const id = ++hintId;
+    statusMsg.textContent = "Your advisors confer…";
+    await new Promise(r => setTimeout(r, 30));      // let the message paint before the search
+    const move = await AI.bestMove(game, "warlord");
+    if (id !== hintId || state.busy || !move) return;     // the position moved on while we thought
+    state.selected = null;
+    Board3D.setSelection(null, [], game);
+    Board3D.setHint(move);
+    const target = game.board[move.to] || move.flags === "ep";
+    statusMsg.textContent = `💡 Your advisors suggest: ${Pieces.TITLES[game.board[move.from][1]]} ${SQ(move.from)} ${target ? "takes" : "to"} ${SQ(move.to)}.`;
+  }
+
   async function executeMove(move) {
     state.busy = true;
+    clearHint();
     Board3D.setSelection(null, [], game);
     const attacker = game.board[move.from];
     const capSq = move.flags === "ep" ? move.to + (attacker[0] === "w" ? 8 : -8) : move.to;
@@ -208,6 +235,7 @@
   // ---------- controls ----------
 
   function newGame() {
+    clearHint();
     document.getElementById("gameover-overlay")?.remove();
     game.load(Engine.START_FEN);
     state.selected = null;
@@ -224,6 +252,7 @@
 
   function undo() {
     if (state.busy || game.history.length === 0) return;
+    clearHint();
     document.getElementById("gameover-overlay")?.remove();
     state.over = false;
     game.undo();
@@ -248,6 +277,7 @@
   $("btn-new").addEventListener("click", newGame);
   $("btn-undo").addEventListener("click", undo);
   $("btn-flip").addEventListener("click", () => Board3D.flipCamera());
+  $("btn-hint").addEventListener("click", showHint);
   $("toggle-battles").addEventListener("change", e => { state.battles = e.target.checked; });
   $("toggle-sound").addEventListener("change", e => { Sound.setMuted(!e.target.checked); });
   $("toggle-sound").checked = !Sound.muted;
@@ -262,6 +292,7 @@
   window.debugBoard = () => game.board.map((p, i) => p ? `${i}:${p}` : null).filter(Boolean).join(" ");
   window.debugClick = sq => onSquareClick(sq);
   window.debugLoad = fen => {
+    clearHint();
     game.load(fen);
     state.selected = null;
     state.lastMove = null;
