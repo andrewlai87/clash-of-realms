@@ -92,9 +92,9 @@ const Battle3D = (() => {
   // Each caster has its own: the Ivory mage throws lightning, the Ivory
   // queen sends a wave of light off her blade, the Obsidian mage hurls a
   // fireball and the Obsidian queen calls a storm down from above.
-  const SPELLS = { wb: "lightning", wq: "blade", bb: "fireball", bq: "storm" };
-  const SPELL_REACH = { lightning: 2.4, fireball: 2.4, storm: 2.6, blade: 1.7 };
-  const SPELL_COLOR = { lightning: 0x7fc8ff, blade: 0xffa53a, fireball: 0xff7a1e, storm: 0xb36bff };
+  const SPELLS = { wb: "lightning", wq: "blade", bb: "fireball", bq: "void" };
+  const SPELL_REACH = { lightning: 2.4, fireball: 2.4, storm: 2.6, void: 2.6, blade: 1.7 };
+  const SPELL_COLOR = { lightning: 0x7fc8ff, blade: 0xffa53a, fireball: 0xff7a1e, storm: 0xb36bff, void: 0xb36bff };
 
   const hdr = (hex, k) => new THREE.Color(hex).multiplyScalar(k);
 
@@ -248,6 +248,122 @@ const Battle3D = (() => {
     }
     await pause(120);
     await cast;
+  }
+
+  // Nyx's void lance: night gathers into an orb before her, then pours out
+  // as a beam with a black heart; what it touches comes apart into motes.
+  const VOID = [0xb36bff, 0x7a3cff, 0xe2c8ff];
+  async function voidSpell(atk, def, dir, hex) {
+    Sound.magic();
+    const y0 = atk.position.y;
+    const origin = () => atk.position.clone().add(new THREE.Vector3(0, (atk.userData.height || 1.2) * 0.72, 0)).addScaledVector(dir, 0.42);
+    const orb = new THREE.Group();
+    const heart = new THREE.Mesh(new THREE.SphereGeometry(0.1, 20, 14), new THREE.MeshBasicMaterial({ color: 0x07030d }));
+    const shell = glowMesh(new THREE.SphereGeometry(0.15, 20, 14), hex, 2.2, 0.55);
+    const halo = glowMesh(new THREE.SphereGeometry(0.24, 20, 14), 0x7a3cff, 0.9, 0.3);
+    orb.add(halo, shell, heart);
+    orb.scale.setScalar(0.05);
+    const light = new THREE.PointLight(hex, 0, 7);
+    if (!skipped) Board3D.scene.add(orb, light);
+    // she rises, and the dark streams in
+    const c = { k: 0.05 };
+    await Promise.all([
+      tw(atk.position, { y: y0 + 0.22 }, { duration: 700, easing: "out" }),
+      tw(c, { k: 1 }, {
+        duration: 700, easing: "in",
+        onUpdate: () => {
+          const o = origin();
+          orb.position.copy(o);
+          orb.scale.setScalar(c.k * (0.92 + Math.random() * 0.16));
+          light.position.copy(o);
+          light.intensity = c.k * 4;
+          if (skipped) return;
+          for (let i = 0; i < 2; i++) {
+            const from = o.clone().add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.3, Math.random() - 0.5).normalize().multiplyScalar(0.75));
+            puff(from, o.clone().sub(from).multiplyScalar(3.2), pick(VOID), 0.4, 0.3);
+          }
+        },
+      }),
+    ]);
+    await pause(110);
+    // the lance
+    Sound.zap();
+    Sound.boom();
+    const start = origin(), end = hitPoint(def);
+    const axis = end.clone().sub(start), len = axis.length();
+    axis.normalize();
+    const beam = new THREE.Group();
+    const tube = new THREE.CylinderGeometry(1, 1, 1, 16, 1, true);
+    const core = new THREE.Mesh(tube, new THREE.MeshBasicMaterial({ color: 0x07030d, transparent: true }));
+    const glow = glowMesh(tube, hex, 2.4, 0.6), haze = glowMesh(tube, 0x7a3cff, 0.9, 0.28);
+    beam.add(haze, glow, core);
+    beam.position.copy(start).lerp(end, 0.5);
+    beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis);
+    if (!skipped) Board3D.scene.add(beam);
+    const side = new THREE.Vector3(-axis.z, 0, axis.x).normalize(), up = new THREE.Vector3().crossVectors(axis, side);
+    let hit = false, glowAt = 0;
+    const b = { t: 0 };
+    await tw(b, { t: 1 }, {
+      duration: 950,
+      onUpdate: () => {
+        if (skipped) return;
+        const env = Math.min(1, b.t * 9, (1 - b.t) * 5), fl = 0.9 + Math.random() * 0.2;
+        core.scale.set(0.035 * env, len, 0.035 * env);
+        glow.scale.set(0.075 * env * fl, len, 0.075 * env * fl);
+        haze.scale.set(0.14 * env * fl, len, 0.14 * env * fl);
+        orb.scale.setScalar(0.8 + env * 0.3 * fl);
+        light.position.copy(end);
+        light.intensity = 7 * env * fl;
+        // energy spiralling down the beam
+        const now = performance.now();
+        for (let i = 0; i < 2; i++) {
+          const u = Math.random(), a = now * 0.02 + u * 14;
+          const p = start.clone().addScaledVector(axis, u * len).addScaledVector(side, Math.cos(a) * 0.11).addScaledVector(up, Math.sin(a) * 0.11);
+          puff(p, axis.clone().multiplyScalar(2.5), pick(VOID), 0.3, 0.22);
+        }
+        puff(end.clone().add(jitter(0.3)), jitter(1.6), pick(VOID), 0.6, 0.35);
+        if (!hit && b.t > 0.1) {
+          hit = true;
+          Board3D.shake(0.14);
+          Board3D.dustRing(def.position, hex);
+          clip(def, "Hit_A");
+          Board3D.spawnBurst(end, 0xe2c8ff, 18, 3);
+        }
+        if (hit && now - glowAt > 230) { glowAt = now; flashHit(def, 0x9a4dff); }
+      },
+    });
+    discard(beam);
+    tube.dispose();
+    Board3D.scene.remove(light);
+    def.userData.unmade = true;
+    const e = { k: orb.scale.x };
+    Tween.to(e, { k: 0.02 }, { duration: 300, easing: "in", onUpdate: () => orb.scale.setScalar(e.k) }).then(() => discard(orb));
+    await tw(atk.position, { y: y0 }, { duration: 380, easing: "inOut" });
+  }
+
+  // touched by the void: the piece comes apart into violet motes and is gone
+  async function voidDeath(def) {
+    Sound.death();
+    const h = (def.userData.height || 1), base = def.position.clone();
+    const lift = def.userData.lift || 0;
+    flashLight(hitPoint(def), 0xb36bff, 5, 900, 6);
+    const s = { k: 0 }, sc = def.scale.clone();
+    await tw(s, { k: 1 }, {
+      duration: 900, easing: "in",
+      onUpdate: () => {
+        def.scale.set(sc.x * (1 - s.k * 0.9), sc.y * (1 - s.k * 0.35), sc.z * (1 - s.k * 0.9));
+        def.position.y = base.y + s.k * 0.25;
+        if (skipped) return;
+        for (let i = 0; i < 3; i++) {
+          const a = Math.random() * Math.PI * 2, r = 0.22 * (1 - s.k * 0.7) * Math.random();
+          puff(new THREE.Vector3(base.x + Math.cos(a) * r, lift + Math.random() * h * 0.9 + s.k * 0.25, base.z + Math.sin(a) * r),
+            new THREE.Vector3(Math.cos(a) * 0.3, 0.5 + Math.random() * 0.8, Math.sin(a) * 0.3), pick(VOID), 0.3 + Math.random() * 0.3, 0.7);
+        }
+      },
+    });
+    def.visible = false;
+    Board3D.spawnBurst(base.clone().setY(lift + h * 0.6), 0xe2c8ff, 20, 2.4);
+    await pause(350);
   }
 
   async function fireballSpell(atk, def, dir, hex) {
@@ -658,7 +774,7 @@ const Battle3D = (() => {
     ]);
   }
 
-  const SPELL_FN = { lightning: lightningSpell, storm: stormSpell, fireball: fireballSpell, blade: bladeSpell };
+  const SPELL_FN = { lightning: lightningSpell, storm: stormSpell, void: voidSpell, fireball: fireballSpell, blade: bladeSpell };
 
   // ---- the treant's attack: roots burst from the earth and drag its prey under ----
   const BARK = new THREE.MeshStandardMaterial({ color: 0x8d7c66, roughness: 0.95 });
@@ -919,6 +1035,7 @@ const Battle3D = (() => {
   }
 
   async function death(def) {
+    if (def.userData.unmade) return voidDeath(def);
     if (def.userData.entangled) return rootDeath(def);
     if (def.userData.ashDeath) return ashDeath(def);
     Sound.death();
