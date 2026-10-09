@@ -253,18 +253,30 @@ const Battle3D = (() => {
   // Nyx's void lance: night gathers into an orb before her, then pours out
   // as a beam with a black heart; what it touches comes apart into motes.
   const VOID = [0xb36bff, 0x7a3cff, 0xe2c8ff];
+  const VOIDFIRE = [0x5a22c8, 0x3d1596, 0x7436e0];      // dim enough that a dense stream stays purple, not white
   async function voidSpell(atk, def, dir, hex) {
     Sound.magic();
     const y0 = atk.position.y;
     const origin = () => atk.position.clone().add(new THREE.Vector3(0, (atk.userData.height || 1.2) * 0.72, 0)).addScaledVector(dir, 0.42);
+    // the orb is a knot of violet flame, not a solid thing: a soft glow fed by licking tongues
+    const blot = (color, k, opacity) => new THREE.Sprite(new THREE.SpriteMaterial({
+      map: PUFF_TEX, color: hdr(color, k), transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
     const orb = new THREE.Group();
-    const heart = new THREE.Mesh(new THREE.SphereGeometry(0.1, 20, 14), new THREE.MeshBasicMaterial({ color: 0x07030d }));
-    const shell = glowMesh(new THREE.SphereGeometry(0.15, 20, 14), hex, 2.2, 0.55);
-    const halo = glowMesh(new THREE.SphereGeometry(0.24, 20, 14), 0x7a3cff, 0.9, 0.3);
-    orb.add(halo, shell, heart);
-    orb.scale.setScalar(0.05);
+    const halo = blot(0x5a1fd0, 1, 0.55), heart = blot(0xe9d8ff, 1.8, 0.9);
+    orb.add(halo, heart);
     const light = new THREE.PointLight(hex, 0, 7);
     if (!skipped) Board3D.scene.add(orb, light);
+    let size = 0, acc = 0, last = performance.now();
+    const feed = o => {
+      const fl = 0.85 + Math.random() * 0.3;
+      orb.position.copy(o);
+      halo.scale.setScalar(0.75 * size * fl);
+      heart.scale.setScalar(0.3 * size * (2 - fl));
+      light.position.copy(o);
+      // tongues of flame curling off the knot
+      for (let i = 0; i < 2; i++) puff(o.clone().add(jitter(0.14 * size)), jitter(0.5).setY(0.25 + Math.random() * 0.5), pick(VOID), 0.55 * size, 0.3);
+    };
     // she rises, and the dark streams in
     const c = { k: 0.05 };
     await Promise.all([
@@ -272,72 +284,69 @@ const Battle3D = (() => {
       tw(c, { k: 1 }, {
         duration: 700, easing: "in",
         onUpdate: () => {
-          const o = origin();
-          orb.position.copy(o);
-          orb.scale.setScalar(c.k * (0.92 + Math.random() * 0.16));
-          light.position.copy(o);
-          light.intensity = c.k * 4;
           if (skipped) return;
+          const o = origin();
+          size = c.k;
+          light.intensity = c.k * 4;
+          feed(o);
           for (let i = 0; i < 2; i++) {
-            const from = o.clone().add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.3, Math.random() - 0.5).normalize().multiplyScalar(0.75));
-            puff(from, o.clone().sub(from).multiplyScalar(3.2), pick(VOID), 0.4, 0.3);
+            const from = o.clone().add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.3, Math.random() - 0.5).normalize().multiplyScalar(0.8));
+            puff(from, o.clone().sub(from).multiplyScalar(3), pick(VOID), 0.35, 0.3);
           }
         },
       }),
     ]);
     await pause(110);
-    // the lance
+    // the lance: a torrent of violet fire
     Sound.zap();
-    Sound.boom();
+    Sound.fire();
     const start = origin(), end = hitPoint(def);
     const axis = end.clone().sub(start), len = axis.length();
     axis.normalize();
-    const beam = new THREE.Group();
-    const tube = new THREE.CylinderGeometry(1, 1, 1, 16, 1, true);
-    const core = new THREE.Mesh(tube, new THREE.MeshBasicMaterial({ color: 0x07030d, transparent: true }));
-    const glow = glowMesh(tube, hex, 2.4, 0.6), haze = glowMesh(tube, 0x7a3cff, 0.9, 0.28);
-    beam.add(haze, glow, core);
-    beam.position.copy(start).lerp(end, 0.5);
-    beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis);
-    if (!skipped) Board3D.scene.add(beam);
-    const side = new THREE.Vector3(-axis.z, 0, axis.x).normalize(), up = new THREE.Vector3().crossVectors(axis, side);
     let hit = false, glowAt = 0;
+    last = performance.now();
     const b = { t: 0 };
     await tw(b, { t: 1 }, {
-      duration: 950,
+      duration: 1050,
       onUpdate: () => {
         if (skipped) return;
-        const env = Math.min(1, b.t * 9, (1 - b.t) * 5), fl = 0.9 + Math.random() * 0.2;
-        core.scale.set(0.035 * env, len, 0.035 * env);
-        glow.scale.set(0.075 * env * fl, len, 0.075 * env * fl);
-        haze.scale.set(0.14 * env * fl, len, 0.14 * env * fl);
-        orb.scale.setScalar(0.8 + env * 0.3 * fl);
-        light.position.copy(end);
-        light.intensity = 7 * env * fl;
-        // energy spiralling down the beam
         const now = performance.now();
-        for (let i = 0; i < 2; i++) {
-          const u = Math.random(), a = now * 0.02 + u * 14;
-          const p = start.clone().addScaledVector(axis, u * len).addScaledVector(side, Math.cos(a) * 0.11).addScaledVector(up, Math.sin(a) * 0.11);
-          puff(p, axis.clone().multiplyScalar(2.5), pick(VOID), 0.3, 0.22);
+        acc += Math.min(0.25, (now - last) / 1000); last = now;
+        const env = Math.min(1, b.t * 8, (1 - b.t) * 5);
+        size = 0.85 + env * 0.35;
+        feed(start);
+        light.position.copy(end);
+        light.intensity = (5 + Math.random() * 4) * env;
+        while (acc > 0.0016) {
+          acc -= 0.0016;
+          if (Math.random() > env) continue;
+          // a hot pale core wrapped in slower, darker, turbulent flame
+          const hot = Math.random() < 0.3;
+          const speed = hot ? 8 + Math.random() : 5.5 + Math.random() * 1.5;
+          const vel = axis.clone().multiplyScalar(speed).add(jitter(hot ? 0.3 : 1.1));
+          // born part-way along, so a slow frame still lays down an unbroken stream
+          const life = len / speed + (hot ? 0.05 : 0.14), age = Math.min(acc, life * 0.9);
+          puff(start.clone().add(jitter(hot ? 0.03 : 0.1)).addScaledVector(vel, age), vel,
+            hot ? 0x9a6cf0 : pick(VOIDFIRE), hot ? 0.45 + Math.random() * 0.25 : 0.8 + Math.random() * 0.6, life - age);
         }
-        puff(end.clone().add(jitter(0.3)), jitter(1.6), pick(VOID), 0.6, 0.35);
-        if (!hit && b.t > 0.1) {
+        if (!hit && b.t > 0.14) {
           hit = true;
+          Sound.boom();
           Board3D.shake(0.14);
           Board3D.dustRing(def.position, hex);
           clip(def, "Hit_A");
-          Board3D.spawnBurst(end, 0xe2c8ff, 18, 3);
+          burnOn(def, 1300, VOID);
         }
+        if (hit && Math.random() < 0.35) Board3D.spawnBurst(end, 0xe2c8ff, 2, 2.2);
         if (hit && now - glowAt > 230) { glowAt = now; flashHit(def, 0x9a4dff); }
       },
     });
-    discard(beam);
-    tube.dispose();
     Board3D.scene.remove(light);
+    flashLight(end, hex, 4, 500, 6);
     def.userData.unmade = true;
-    const e = { k: orb.scale.x };
-    Tween.to(e, { k: 0.02 }, { duration: 300, easing: "in", onUpdate: () => orb.scale.setScalar(e.k) }).then(() => discard(orb));
+    const e = { k: size };
+    Tween.to(e, { k: 0.02 }, { duration: 320, easing: "in", onUpdate: () => { halo.scale.setScalar(0.75 * e.k); heart.scale.setScalar(0.3 * e.k); } })
+      .then(() => discard(orb));
     await tw(atk.position, { y: y0 }, { duration: 380, easing: "inOut" });
   }
 
