@@ -660,6 +660,150 @@ const Battle3D = (() => {
 
   const SPELL_FN = { lightning: lightningSpell, storm: stormSpell, fireball: fireballSpell, blade: bladeSpell };
 
+  // ---- the treant's attack: roots burst from the earth and drag its prey under ----
+  const BARK = new THREE.MeshStandardMaterial({ color: 0x8d7c66, roughness: 0.95 });
+
+  // a tapering root that coils up and inward around a piece
+  function makeRoot(center, h, a0, turns, r0) {
+    const pts = [];
+    for (let i = 0; i <= 9; i++) {
+      const u = i / 9, a = a0 + u * turns * Math.PI * 2;
+      const r = r0 * (1 - u * 0.62) + Math.sin(u * 9 + a0) * 0.02;
+      pts.push(new THREE.Vector3(center.x + Math.cos(a) * r, -0.12 + Math.pow(u, 0.8) * (h + 0.12), center.z + Math.sin(a) * r));
+    }
+    const curve = new THREE.CatmullRomCurve3(pts), SEG = 40, RAD = 7;
+    const geo = new THREE.TubeGeometry(curve, SEG, 0.075, RAD, false);
+    const pos = geo.attributes.position, c = new THREE.Vector3(), v = new THREE.Vector3();
+    for (let i = 0; i <= SEG; i++) {
+      curve.getPointAt(i / SEG, c);
+      const k = 1 - 0.85 * (i / SEG);                      // thick at the ground, a whip at the tip
+      for (let j = 0; j <= RAD; j++) {
+        const n = i * (RAD + 1) + j;
+        v.fromBufferAttribute(pos, n).sub(c).multiplyScalar(k).add(c);
+        pos.setXYZ(n, v.x, v.y, v.z);
+      }
+    }
+    geo.computeVertexNormals();
+    geo.setDrawRange(0, 0);
+    const m = new THREE.Mesh(geo, BARK);
+    m.castShadow = true;
+    m.userData.full = geo.index.count;
+    return m;
+  }
+
+  async function rootStrike(atk, def, dir) {
+    const u = atk.userData, D = def.position.clone();
+    Sound.magic();
+    // rear up, limbs overhead
+    await Promise.all([
+      tw(u, { armRaise: 1 }, { duration: 520, easing: "out" }),
+      tw(atk.rotation, { x: 0.16 }, { duration: 520, easing: "out" }),
+    ]);
+    await pause(140);
+    // and bring them down on the earth
+    await Promise.all([
+      tw(u, { armRaise: 0.28 }, { duration: 170, easing: "in" }),
+      tw(atk.rotation, { x: -0.3 }, { duration: 170, easing: "in" }),
+    ]);
+    Sound.thud();
+    Sound.boom();
+    Board3D.shake(0.22);
+    const front = atk.position.clone().addScaledVector(dir, 0.45);
+    Board3D.dustRing(front);
+    // the ground splits in a jagged line toward the prey
+    const cracks = [];
+    if (!skipped) {
+      const perp = new THREE.Vector3(-dir.z, 0, dir.x), len = front.distanceTo(D);
+      const n = Math.max(3, Math.round(len / 0.22));
+      let from = front.clone().setY(0.013);
+      for (let i = 1; i <= n; i++) {
+        const to = front.clone().lerp(D, i / n).addScaledVector(perp, i === n ? 0 : (Math.random() - 0.5) * 0.2).setY(0.013);
+        const seg = new THREE.Mesh(new THREE.PlaneGeometry(0.05 + Math.random() * 0.04, from.distanceTo(to) * 1.08),
+          new THREE.MeshBasicMaterial({ color: 0x120c08, transparent: true, opacity: 0.9, depthWrite: false }));
+        seg.position.copy(from).lerp(to, 0.5);
+        seg.rotation.x = -Math.PI / 2;
+        seg.rotation.z = Math.atan2(to.x - from.x, to.z - from.z) + Math.PI;
+        seg.visible = false;
+        Board3D.scene.add(seg);
+        cracks.push(seg);
+        from = to;
+      }
+      const c = { k: 0 };
+      let shown = 0;
+      await tw(c, { k: 1 }, {
+        duration: 90 + len * 150,
+        onUpdate: () => {
+          const upTo = Math.round(c.k * cracks.length);
+          for (; shown < upTo; shown++) {
+            cracks[shown].visible = true;
+            Board3D.spawnBurst(cracks[shown].position, 0xbea573, 3, 1.4);
+          }
+        },
+      });
+    }
+    // roots erupt around the prey and coil shut
+    Sound.thud();
+    Board3D.shake(0.16);
+    Board3D.dustRing(D);
+    Board3D.spawnBurst(D.clone().setY(0.15), 0x7fbf5a, 22, 3);
+    const h = (def.userData.height || 1) + (def.userData.lift || 0) * 0.6;
+    const roots = [];
+    if (!skipped) {
+      for (let i = 0; i < 6; i++) {
+        const r = makeRoot(D, h * (0.7 + (i % 3) * 0.14), i * Math.PI / 3 + Math.random() * 0.4, (i % 2 ? 1 : -1) * (0.7 + Math.random() * 0.35), def.userData.heavy ? 0.52 : 0.4);
+        Board3D.scene.add(r);
+        roots.push(r);
+      }
+    }
+    const grow = { k: 0 };
+    let struck = false;
+    await tw(grow, { k: 1 }, {
+      duration: 520, easing: "out",
+      onUpdate: () => {
+        for (const r of roots) r.geometry.setDrawRange(0, Math.floor(grow.k * r.userData.full / 3) * 3);
+        if (!struck && grow.k > 0.5) {
+          struck = true;
+          flashHit(def, 0x6fae4a);
+          clip(def, "Hit_A");
+          Board3D.spawnBurst(hitPoint(def), 0x7fbf5a, 14, 2.4);
+        }
+      },
+    });
+    def.userData.entangled = { roots, cracks };
+    await Promise.all([
+      tw(u, { armRaise: 0 }, { duration: 380, easing: "out" }),
+      tw(atk.rotation, { x: 0 }, { duration: 380, easing: "out" }),
+    ]);
+  }
+
+  // held fast by roots, the piece is drawn down into the earth
+  async function rootDeath(def) {
+    const { roots, cracks } = def.userData.entangled;
+    const drop = (def.userData.height || 1) + (def.userData.lift || 0) + 0.35;
+    Sound.death();
+    const y0 = def.position.y, s = { k: 0 };
+    let puffAt = 0;
+    await tw(s, { k: 1 }, {
+      duration: 900, easing: "in",
+      onUpdate: () => {
+        def.position.y = y0 - drop * s.k;
+        def.rotation.z = Math.sin(s.k * 26) * 0.05 * (1 - s.k);           // struggling
+        for (const r of roots) r.position.y = -drop * s.k;
+        if (!skipped && s.k - puffAt > 0.12) { puffAt = s.k; Board3D.spawnBurst(new THREE.Vector3(def.position.x, 0.08, def.position.z), 0xbea573, 6, 1.8); }
+      },
+    });
+    def.visible = false;
+    Sound.thud();
+    Board3D.dustRing(new THREE.Vector3(def.position.x, 0, def.position.z));
+    Board3D.spawnBurst(new THREE.Vector3(def.position.x, 0.2, def.position.z), 0x7fbf5a, 16, 2.6);
+    for (const r of roots) { Board3D.scene.remove(r); r.geometry.dispose(); }
+    // the earth closes over
+    const f = { o: 0.9 };
+    Tween.to(f, { o: 0 }, { duration: 1400, onUpdate: () => { for (const c of cracks) c.material.opacity = f.o; } })
+      .then(() => { for (const c of cracks) { discard(c); c.geometry.dispose(); } });
+    await pause(250);
+  }
+
   async function golemStrike(atk, def, dir, glowColor) {
     const p = atk.userData.parts || {};
     Sound.magic();
@@ -714,6 +858,7 @@ const Battle3D = (() => {
   }
 
   async function death(def) {
+    if (def.userData.entangled) return rootDeath(def);
     if (def.userData.ashDeath) return ashDeath(def);
     Sound.death();
     if (def.userData.skinned && def.userData.actions.Death_A) {
@@ -766,7 +911,7 @@ const Battle3D = (() => {
     const type = attackerPiece[1];
     const spell = (type === "b" || type === "q") ? SPELLS[attackerPiece] : null;
     const flyer = !!atk.userData.flyer;
-    const reach = spell ? SPELL_REACH[spell] : flyer ? 1.25 : 0.95;
+    const reach = spell ? SPELL_REACH[spell] : flyer ? 1.25 : atk.userData.roots ? 2.1 : 0.95;
     const gap = Math.hypot(D.x - A.x, D.z - A.z);
     const stop = (flyer || gap - reach > 0.35) ? D.clone().sub(dir.clone().multiplyScalar(reach)) : A.clone();
     const fightGap = Math.hypot(D.x - stop.x, D.z - stop.z);
@@ -834,6 +979,7 @@ const Battle3D = (() => {
     if (spell) await SPELL_FN[spell](atk, def, dir, SPELL_COLOR[spell]);
     else if (flyer && atk.userData.breath) await breathStrike(atk, def);
     else if (flyer) await swoopStrike(atk, def, dir, glowColor);
+    else if (atk.userData.roots) await rootStrike(atk, def, dir);
     else if (type === "r" && (!atk.userData.skinned || atk.userData.heavy)) await golemStrike(atk, def, dir, glowColor);
     else await meleeStrike(atk, def, dir, glowColor);
 

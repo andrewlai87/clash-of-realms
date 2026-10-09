@@ -1840,6 +1840,8 @@ const Pieces3D = (() => {
   const heavySrc = {};
   const heavyMaps = {};
 
+  const ARM_UP = 1.9;      // radians about the side axis that bring a hanging arm overhead
+
   function buildHeavy(type, color) {
     const cfg = HEAVY[color], src = heavySrc[color];
     if (type !== "r" || !src) return null;
@@ -1876,9 +1878,15 @@ const Pieces3D = (() => {
       rot.setFromAxisAngle(side, angle);
       b.quaternion.premultiply(pq).premultiply(rot).premultiply(pq.invert());
     };
+    // the treant calls roots out of the earth: armRaise lifts both limbs for the slam
+    g.userData.armRaise = 0;
+    if (color === "w") g.userData.roots = true;
     g.userData.postAnimate = () => {
-      if (walk.amp < 0.001) return;
+      const raise = g.userData.armRaise;
+      if (walk.amp < 0.001 && Math.abs(raise) < 0.001) return;
       side.set(1, 0, 0).applyQuaternion(g.quaternion);
+      if (Math.abs(raise) > 0.001) for (const l of limbs) swing(l.arm, raise * ARM_UP);
+      if (walk.amp < 0.001) return;
       for (const l of limbs) {
         const ph = walk.phase + l.off;
         swing(l.thigh, Math.sin(ph) * 0.6 * walk.amp);
