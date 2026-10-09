@@ -6,7 +6,7 @@
  * cache-first for the big immutable assets (models, vendor libs, icons).
  * Bump VERSION whenever cached assets must be invalidated.
  */
-const VERSION = "cor-v5";
+const VERSION = "cor-v6";
 
 const CODE = [
   ".",

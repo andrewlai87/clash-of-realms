@@ -1,4 +1,3 @@
 .DS_Store
-# Mixamo originals and converted characters stay local until hosting is decided
+# downloaded originals stay local; the converted models in assets/models/mx are published
 mixamo-raw/
-assets/models/mx/

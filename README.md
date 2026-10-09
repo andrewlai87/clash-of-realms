@@ -83,3 +83,19 @@ node -e "const E = require('./js/engine.js'); console.log(E.perft(new E.Game(), 
 - Threefold-repetition draw detection
 - Online multiplayer
 - More elaborate per-matchup battle choreography
+
+## Credits
+
+Character models and animations:
+
+- Paladin, Maria, Ganfaul, Castle Guard, Vampire, Skeleton Zombie and others, plus all humanoid animations — [Mixamo](https://www.mixamo.com) (Adobe)
+- Magma Golem — Oscar Creativo, via Sketchfab (CC BY)
+- Ancient Treant — DJMaesen, via Sketchfab (CC BY)
+- Obsidian Pyromancer ("Shadowkin Mage") — Ferocious Industries, via Sketchfab (CC BY)
+- Nyx, Queen of Night — Art_Fm_By_Maxos, via Sketchfab (CC BY)
+- Feathered wings — Boooooop, via Sketchfab (CC BY)
+- Sun Phoenix ("phoenix bird") — NORBERTO-3D, via Sketchfab (CC BY)
+- Obsidian Wyvern — CharlieCatling, via Sketchfab
+- Earlier low-poly characters — [KayKit](https://kaylousberg.com) (CC0)
+
+Models were decimated, rescaled and in places repainted or re-dressed in Blender (see `tools/blender/`).
