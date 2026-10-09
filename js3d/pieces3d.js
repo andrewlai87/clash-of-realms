@@ -1097,7 +1097,9 @@ const Pieces3D = (() => {
     grip.position.set(0, 9, 2);
     const inFist = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));   // head out of the top of the fist
     const hq = new THREE.Quaternion(), gq = new THREE.Quaternion(), up = new THREE.Quaternion();
-    const hp = new THREE.Vector3(), hs = new THREE.Vector3();
+    const hp = new THREE.Vector3(), hs = new THREE.Vector3(), fp = new THREE.Vector3(), mid = new THREE.Vector3();
+    // the curled fingers: the shaft runs through the hollow they close around
+    const fingers = [1, 2, 3, 4].map(i => char.getObjectByName("mixamorigRightHandIndex" + i)).filter(Boolean);
     let stand = 1;
     const post = g.userData.postAnimate;
     g.userData.postAnimate = () => {
@@ -1109,8 +1111,13 @@ const Pieces3D = (() => {
       g.getWorldQuaternion(gq);
       up.copy(hq).invert().multiply(gq);                  // upright, blade toward his front
       grip.quaternion.copy(inFist).slerp(up, stand);
+      if (fingers.length === 4) {
+        mid.set(0, 0, 0);
+        for (const f of fingers) mid.add(hand.worldToLocal(f.getWorldPosition(fp)));
+        grip.position.copy(mid.multiplyScalar(0.25));
+      }
       // slide the shaft through the fist so the butt rests on the ground
-      hand.getWorldPosition(hp);
+      grip.getWorldPosition(hp);
       hand.getWorldScale(hs);
       const reach = Math.max(20, Math.min(120, (hp.y - g.position.y - 0.04) / hs.y));
       halberd.position.y = -(62 + (reach - 62) * stand);
