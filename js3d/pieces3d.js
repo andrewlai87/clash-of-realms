@@ -1455,6 +1455,32 @@ const Pieces3D = (() => {
     w.getObjectByName("wingR").rotation.y = -a;
   };
 
+  // A winged queen beats her wings to travel. Watches the piece's own motion
+  // and returns a per-frame driver: idle she stirs them gently; on the move
+  // they sweep wide and fast, she rises, and leans into her flight.
+  function wingFlight(g, wings, body, idleAmt, idleSpeed) {
+    const last = g.position.clone();
+    let fly = 0, phase = 0, then = 0;
+    return s => {
+      const dt = Math.min(0.05, Math.max(0, s - then));
+      then = s;
+      const moved = Math.hypot(g.position.x - last.x, g.position.z - last.z);
+      last.copy(g.position);
+      const moving = dt > 0 && moved / dt > 0.25 && moved < 1 ? 1 : 0;       // a jump that large is a placement, not flight
+      fly += (moving - fly) * Math.min(1, dt * (moving ? 9 : 3.5));
+      phase += dt * (idleSpeed + fly * 9.5);
+      if (wings) {
+        // the downstroke is quicker than the recovery
+        const beat = Math.sin(phase + 0.35 * fly * Math.sin(phase));
+        const a = beat * (idleAmt + fly * 0.5) + fly * 0.12;
+        wings.getObjectByName("wingL").rotation.y = a;
+        wings.getObjectByName("wingR").rotation.y = -a;
+      }
+      body.rotation.x = -fly * 0.2;                                          // lean into it
+      return fly * (0.16 + Math.sin(phase) * 0.035);                         // extra height, bobbing with each beat
+    };
+  }
+
   // Ivory's bishop: an archmage of light. He hovers inside a turning ring of
   // runes with crystals in orbit, his staff blazes, and he travels as a
   // bolt of lightning instead of walking.
@@ -1571,11 +1597,11 @@ const Pieces3D = (() => {
     const aura = makeAura(g, 0xffd98a, h);
     g.userData.glide = true;
     const prev = g.userData.animate;
+    const flight = wingFlight(g, wings, char, 0.13, 1.7);
     g.userData.animate = t => {
       if (prev) prev(t);
       const s = t * 0.001;
-      char.position.y = lift + Math.sin(s * 1.6) * 0.03;
-      if (wings) flap(wings, s);
+      char.position.y = lift + Math.sin(s * 1.6) * 0.03 + flight(s);
       aura(s);
       if (flames.blade) {
         const L = flames.blade.userData.L;
@@ -1619,13 +1645,13 @@ const Pieces3D = (() => {
     add(g, cyl(0.31, 0.34, 0.035, 28), mat(0x1d1a22, { roughness: 0.4 }), 0, 0.018, 0);
     add(g, cyl(0.325, 0.325, 0.012, 28), goldMat(0x9a2f3c), 0, 0.04, 0);
     const aura = makeAura(g, 0x9a4dff, h);
+    const flight = wingFlight(g, wings, body, 0.16, 1.4);
     g.userData = {
       type, color, height: h, parts: null, restArmR: 0,
       animate: t => {
         const s = t * 0.001;
-        body.position.y = lift + Math.sin(s * 1.4) * 0.035;
+        body.position.y = lift + Math.sin(s * 1.4) * 0.035 + flight(s);
         body.rotation.y = Math.sin(s * 0.7) * 0.06;
-        if (wings) flap(wings, s, 0.16, 1.4);
         aura(s);
       },
     };
